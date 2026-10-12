@@ -120,6 +120,7 @@
 
     const actions = [
       ...(move.type === 'circle' ? [['↻', 'Draw again', false, () => startDrawing(move)]] : []),
+      ...(Rc.MOVE_TYPES[move.type].wobbly ? [['🎲', 'New wobble', false, () => Rc.rewobble(move)]] : []),
       ['↑', 'Move up', index === 0, () => Rc.shiftMove(recipe, move.id, -1)],
       ['↓', 'Move down', index === recipe.moves.length - 1, () => Rc.shiftMove(recipe, move.id, 1)],
       ['✕', 'Remove', false, () => Rc.removeMove(recipe, move.id)],

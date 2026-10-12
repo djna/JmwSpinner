@@ -14,7 +14,7 @@ Simple trunk model: `main` is the trunk, with short-lived branches for specific 
 
 1. **First slice** (done, `feature/first-slice`): one ring of marks, wheel and strobe views, spin/strobe/afterglow controls, strobe maths readout.
 2. **Second ring and strobe solver** (done, `feature/second-ring`): two rings, and solving the strobe rate (keeping spin) or the spin rate (keeping strobe) for equal and opposite drift, with the skip counts `m1`, `m2` adjustable.
-3. **More moves and an editable recipe** (`feature/more-moves`): solid circle, ring of semicircles; add, remove and reorder moves. A ring of semicircles can attach to the inner or outer edge of a solid circle and follow it, with the bulge direction chosen separately (prongs or hoops). The solver works on any two counted rings (rings A and B), defaulting to the outermost and innermost.
+3. **More moves and an editable recipe** (`feature/more-moves`): solid circle, ring of semicircles; add, remove and reorder moves. A ring of semicircles can attach to the inner or outer edge of a solid circle and follow it, with the bulge direction chosen separately (prongs or hoops). Semicircles have a configurable wobble (seeded hand-drawn imperfections) that gives a living pulse under the strobe. A move is configured before it is drawn, and a solid circle is drawn by turning the wheel under a pen. The solver works on any two counted rings (rings A and B), defaulting to the outermost and innermost.
 4. **Stepped ring**: out-only and loop-back, with the spiral-direction indicator.
 5. **Snapping and ghost guides.**
 6. **Later**: guided step-by-step recipe, then freehand strokes.

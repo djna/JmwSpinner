@@ -56,17 +56,33 @@
             ['out', 'towards the rim'],
           ],
         },
+        { key: 'wobble', label: 'Wobble', min: 0, max: 1, step: 0.05 },
       ],
-      defaults: { count: 13, attach: null, edge: 'inner', radius: 0.6, size: 0.05, width: 0.02, bulge: 'in' },
+      defaults: {
+        count: 13,
+        attach: null,
+        edge: 'inner',
+        radius: 0.6,
+        size: 0.05,
+        width: 0.02,
+        bulge: 'in',
+        wobble: 0.3,
+      },
+      wobbly: true,
     },
   };
 
   let nextId = 1;
 
+  function newSeed() {
+    return Math.floor(Math.random() * 2 ** 31);
+  }
+
   function createMove(type, overrides = {}) {
     const spec = MOVE_TYPES[type];
     if (!spec) throw new Error(`Unknown move type: ${type}`);
     const move = { id: nextId++, type, ...spec.defaults };
+    if (spec.wobbly) move.seed = newSeed();
     for (const [key, value] of Object.entries(overrides)) setField(move, key, value);
     return move;
   }
@@ -93,6 +109,39 @@
     if (field.integer) v = Math.round(v);
     move[key] = Math.max(field.min, v);
     return true;
+  }
+
+  // A small seeded random generator (mulberry32), so a move's wobble is the same every redraw.
+  function seededRandom(seed) {
+    let a = seed >>> 0;
+    return () => {
+      a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // How the k-th shape of a wobbly move differs from a perfect one, as if drawn by hand.
+  // Scaled by the move's `wobble` (0 is perfect): `angle` is a fraction of the spacing,
+  // `radial` a fraction of the shape's size, `tilt` in radians, the rest are multipliers.
+  function wobbleOf(move, k) {
+    const w = move.wobble || 0;
+    const random = seededRandom(Math.imul(move.seed || 0, 1000003) + k);
+    const jitter = (amount) => (random() * 2 - 1) * w * amount;
+    return {
+      angle: jitter(0.12),
+      radial: jitter(0.35),
+      scale: 1 + jitter(0.3),
+      squash: 1 + jitter(0.25),
+      tilt: jitter(0.3),
+      width: 1 + jitter(0.3),
+    };
+  }
+
+  // Give a move a fresh set of imperfections.
+  function rewobble(move) {
+    move.seed = newSeed();
   }
 
   // The starting recipe: a blank wheel, built up by adding moves.
@@ -196,6 +245,8 @@
     effectiveRadius,
     fieldInactive,
     resolve,
+    wobbleOf,
+    rewobble,
     countedMoves,
     defaultPair,
     resolvePair,

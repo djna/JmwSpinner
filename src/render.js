@@ -4,6 +4,7 @@
   'use strict';
 
   const { TAU } = root.JmwMaths;
+  const { wobbleOf } = root.JmwRecipe;
 
   const INK = '#1d1d24';
   const BOARD = '#fbfbf8';
@@ -94,22 +95,24 @@
 
   // A ring of small semicircles, evenly spaced, starting at the top. Each one's flat side
   // lies along the ring and its curve bulges towards the centre or towards the rim.
+  // With wobble, each is slightly off in place, size, shape, tilt and pen width.
   function drawSemicircleRing(c, move) {
     const spacing = TAU / move.count;
-    const turn = move.bulge === 'in' ? Math.PI / 2 : -Math.PI / 2;
-    c.lineWidth = move.width;
+    // Angles on each ellipse are measured from its outward radial axis.
+    const start = move.bulge === 'in' ? Math.PI / 2 : -Math.PI / 2;
     c.lineCap = 'round';
     c.strokeStyle = INK;
-    c.beginPath();
     for (let k = 0; k < move.count; k++) {
-      const theta = k * spacing - Math.PI / 2;
-      const x = move.radius * Math.cos(theta);
-      const y = move.radius * Math.sin(theta);
-      const start = theta + turn;
-      c.moveTo(x + move.size * Math.cos(start), y + move.size * Math.sin(start));
-      c.arc(x, y, move.size, start, start + Math.PI);
+      const j = wobbleOf(move, k);
+      const theta = (k + j.angle) * spacing - Math.PI / 2;
+      const r = move.radius + j.radial * move.size;
+      const along = move.size * j.scale; // half the flat side
+      const depth = along * j.squash; // how far the curve bulges
+      c.lineWidth = move.width * j.width;
+      c.beginPath();
+      c.ellipse(r * Math.cos(theta), r * Math.sin(theta), depth, along, theta + j.tilt, start, start + Math.PI);
+      c.stroke();
     }
-    c.stroke();
   }
 
   const MOVES = {

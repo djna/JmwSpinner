@@ -143,3 +143,28 @@ test('a move configured before drawing can be appended', () => {
   assert.equal(R.appendMove(recipe, move), move);
   assert.deepEqual(recipe.moves, [move]);
 });
+
+test('wobble is repeatable per move and shape, and zero wobble is perfect', () => {
+  const move = R.createMove('semicircles');
+  assert.equal(typeof move.seed, 'number');
+  R.setField(move, 'wobble', 1);
+  assert.deepEqual(R.wobbleOf(move, 3), R.wobbleOf(move, 3));
+  assert.notDeepEqual(R.wobbleOf(move, 3), R.wobbleOf(move, 4));
+
+  const j = R.wobbleOf(move, 5);
+  assert.ok(Math.abs(j.angle) <= 0.12 && Math.abs(j.tilt) <= 0.3);
+  assert.ok(j.scale >= 0.7 && j.scale <= 1.3);
+
+  R.setField(move, 'wobble', 0);
+  const perfect = Object.fromEntries(Object.entries(R.wobbleOf(move, 5)).map(([k, v]) => [k, v + 0])); // -0 to 0
+  assert.deepEqual(perfect, { angle: 0, radial: 0, scale: 1, squash: 1, tilt: 0, width: 1 });
+});
+
+test('a new wobble changes the imperfections', () => {
+  const move = R.createMove('semicircles');
+  const before = R.wobbleOf(move, 0);
+  move.seed = 1;
+  R.rewobble(move);
+  assert.notEqual(move.seed, 1);
+  assert.notDeepEqual(R.wobbleOf(move, 0), before);
+});
