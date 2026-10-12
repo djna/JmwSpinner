@@ -231,3 +231,137 @@ test('nibbles cut their circle wherever they are in the recipe', () => {
   R.setField(nib, 'attach', circle.id);
   assert.equal(R.resolve(recipe).moves[1].nibbles.length, 1);
 });
+
+const near = (actual, expected) =>
+  assert.deepEqual(actual.map((x) => Math.round(x * 1e9) / 1e9), expected);
+
+test('stepped radii: out only climbs then jumps back', () => {
+  const move = R.createMove('stepped', { count: 5, pattern: 'out', inner: 0.2, outer: 0.6 });
+  near(R.steppedRadii(move), [0.2, 0.3, 0.4, 0.5, 0.6]);
+});
+
+test('stepped radii: out and back over one turn goes out for half and back for half', () => {
+  const move = R.createMove('stepped', { count: 4, pattern: 'loop', inner: 0.2, outer: 0.6 });
+  near(R.steppedRadii(move), [0.2, 0.4, 0.6, 0.4]);
+});
+
+test('stepped radii: two turns give count × 2 shapes, a full turn out and a full turn back', () => {
+  const move = R.createMove('stepped', { count: 4, turns: 2, pattern: 'loop', inner: 0.2, outer: 0.6 });
+  near(R.steppedRadii(move), [0.2, 0.3, 0.4, 0.5, 0.6, 0.5, 0.4, 0.3]);
+});
+
+test('a stepped ring spirals in or out depending on the skip count and climb direction', () => {
+  const move = R.createMove('stepped', { count: 12, pattern: 'out', climb: 'cw' });
+  const a = (2 * Math.PI) / 12;
+  assert.equal(R.spiralReading(move, a + 0.01).reading, 'in'); // one spacing on, drift with
+  assert.equal(R.spiralReading(move, a - 0.01).reading, 'in'); // one spacing on, drift against
+  assert.equal(R.spiralReading(move, 0.01).reading, 'still'); // no whole spacing skipped
+  R.setField(move, 'climb', 'acw');
+  assert.equal(R.spiralReading(move, a + 0.01).reading, 'out');
+  assert.equal(R.spiralReading(move, -a).reading, 'in'); // wheel turning the other way
+  R.setField(move, 'pattern', 'loop');
+  assert.equal(R.spiralReading(move, a).reading, 'breathes');
+});
+
+test('the reading flags radial steps that are large next to the gap between shapes', () => {
+  const gentle = R.createMove('stepped', { count: 12, inner: 0.4, outer: 0.5 });
+  const steep = R.createMove('stepped', { count: 12, inner: 0.1, outer: 0.9 });
+  const a = (2 * Math.PI) / 12;
+  assert.ok(R.spiralReading(gentle, a).strain < 0.5);
+  assert.ok(R.spiralReading(steep, a).strain > 0.75);
+});
+
+test('stepped ring fields that do not apply to the chosen shape are inactive', () => {
+  const recipe = R.defaultRecipe();
+  const move = R.addMove(recipe, 'stepped'); // dots
+  assert.equal(R.fieldInactive(recipe, move, 'width'), true);
+  assert.equal(R.fieldInactive(recipe, move, 'bulge'), true);
+  R.setField(move, 'shape', 'semicircle');
+  assert.equal(R.fieldInactive(recipe, move, 'width'), false);
+  assert.equal(R.fieldInactive(recipe, move, 'bulge'), false);
+});
+
+test('a stepped ring can start just beyond another ring and follows it', () => {
+  const recipe = R.defaultRecipe();
+  const circle = R.addMove(recipe, 'circle'); // radius 0.9, width 0.08
+  R.setField(circle, 'radius', 0.5);
+  const semis = R.addMove(recipe, 'semicircles');
+  R.setField(semis, 'attach', circle.id);
+  R.setField(semis, 'edge', 'outer'); // flat side at 0.54
+  R.setField(semis, 'bulge', 'out'); // reaching 0.54 + 0.05
+  const dots = R.addMove(recipe, 'stepped');
+  R.setField(dots, 'from', semis.id);
+  R.setField(dots, 'gap', 0.01);
+  const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `expected ${b}, got ${a}`);
+
+  close(R.steppedInner(recipe, dots), 0.6);
+  close(R.shownValue(recipe, dots, 'inner'), 0.6);
+  assert.equal(R.fieldInactive(recipe, dots, 'inner'), true);
+  assert.equal(R.fieldInactive(recipe, dots, 'gap'), false);
+  close(R.resolve(recipe).moves.find((m) => m.id === dots.id).inner, 0.6);
+
+  R.setField(circle, 'radius', 0.4); // the semicircles move, and the dots follow
+  close(R.steppedInner(recipe, dots), 0.5);
+
+  R.removeMove(recipe, semis.id);
+  assert.equal(dots.from, null);
+  close(R.steppedInner(recipe, dots), dots.inner);
+});
+
+test('trail and offset may be negative; a ring cannot start beyond itself', () => {
+  const move = R.createMove('stepped');
+  R.setField(move, 'trail', -0.4);
+  assert.equal(move.trail, -0.4);
+  assert.equal(R.setField(move, 'from', move.id), false);
+});
+
+test('flight length is one sequence step per flash per skipped spacing', () => {
+  const a = (2 * Math.PI) / 13;
+  const out = R.createMove('stepped', { count: 13, turns: 3, pattern: 'out' });
+  assert.equal(R.spiralReading(out, a).flashes, 38); // 39 shapes, 38 steps out
+  assert.equal(R.spiralReading(out, 2 * a).flashes, 19);
+  const loop = R.createMove('stepped', { count: 13, turns: 2, pattern: 'loop' });
+  assert.equal(R.spiralReading(loop, a).flashes, 13); // half of 26 each way
+  assert.equal(R.spiralReading(out, 0.01).flashes, Infinity);
+  R.setField(out, 'turns', 24);
+  assert.equal(out.turns, 24);
+});
+
+test('trail slows the apparent turn of a shape climbing anticlockwise', () => {
+  // Matches what the strobe view measured: 13 positions, 6 turns, out only, anticlockwise.
+  const a = (2 * Math.PI) / 13;
+  const move = R.createMove('stepped', { count: 13, turns: 6, pattern: 'out', climb: 'acw', trail: 1 });
+  const { lag, flashes } = R.spiralReading(move, a + 0.05);
+  assert.equal(flashes, 77);
+  assert.ok(Math.abs(lag + a / 77) < 1e-12); // one spacing of lag spread over 77 steps
+  R.setField(move, 'trail', 0);
+  assert.ok(R.spiralReading(move, a + 0.05).lag === 0); // -0 is fine
+});
+
+test('saved moves load back with their ids, seeds, fields and links', () => {
+  const recipe = R.defaultRecipe();
+  const circle = R.addMove(recipe, 'circle');
+  const semis = R.addMove(recipe, 'semicircles');
+  R.setField(semis, 'attach', circle.id);
+  R.setField(semis, 'count', 14);
+  const saved = JSON.parse(JSON.stringify(recipe.moves));
+  saved.push({ id: 999, type: 'teleporter' }, null); // unknown and broken entries are skipped
+  saved[1].bulge = 'sideways'; // an invalid value keeps the default
+  saved[1].unknown = 5;
+
+  const loaded = R.movesFromSaved(saved);
+  assert.deepEqual(loaded.map((m) => m.id), [circle.id, semis.id]);
+  assert.equal(loaded[1].count, 14);
+  assert.equal(loaded[1].attach, circle.id);
+  assert.equal(loaded[1].seed, semis.seed);
+  assert.equal(loaded[1].bulge, 'in');
+  assert.ok(!('unknown' in loaded[1]));
+  assert.ok(R.createMove('marks').id > semis.id); // new ids don't clash
+  assert.throws(() => R.movesFromSaved({}), /No list of moves/);
+});
+
+test('loading moves with high ids keeps new ids above them', () => {
+  const loaded = R.movesFromSaved([{ id: 5000, type: 'marks' }]);
+  assert.equal(loaded[0].count, 12); // defaults fill in
+  assert.ok(R.createMove('marks').id > 5000);
+});

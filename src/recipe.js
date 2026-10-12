@@ -24,7 +24,7 @@
   // Where a ring's shapes sit around the wheel: from the top, or from another ring's
   // positions, shifted by `offset` of this ring's own spacing (0.5 is halfway between).
   const ALIGN = { key: 'align', label: 'Align with', ref: 'ring' };
-  const OFFSET = { key: 'offset', label: 'Offset', min: -0.5, max: 0.5, step: 0.05 };
+  const OFFSET = { key: 'offset', label: 'Offset', min: -0.5, max: 0.5, step: 0.05, signed: true };
   // Hand-drawn imperfection for moves drawn shape by shape (see wobbleOf). A solid circle
   // has none: the pen is held still while the wheel turns, so it comes out true.
   const WOBBLE = { key: 'wobble', label: 'Wobble', min: 0, max: 1, step: 0.05 };
@@ -127,6 +127,83 @@
       },
       wobbly: true,
     },
+    // Shapes at the ring's positions, stepping in radius from one to the next, so the still
+    // wheel shows a coil and the strobe makes it move in or out. The pattern can run over
+    // several turns, giving `count × turns` shapes (see steppedRadii).
+    stepped: {
+      label: 'Stepped ring',
+      noun: 'positions',
+      counted: true,
+      fields: [
+        COUNT,
+        { key: 'turns', label: 'Turns', min: 1, max: 24, step: 1, integer: true },
+        {
+          key: 'pattern',
+          label: 'Pattern',
+          options: [
+            ['loop', 'out and back'],
+            ['out', 'out only'],
+          ],
+        },
+        {
+          key: 'climb',
+          label: 'Climbs',
+          options: [
+            ['cw', 'clockwise'],
+            ['acw', 'anticlockwise'],
+          ],
+        },
+        // The inner radius can instead sit `gap` beyond the reach of another ring, and follow it.
+        { key: 'from', label: 'Start beyond', ref: 'ring' },
+        { key: 'gap', label: 'Gap', min: 0, max: 0.2, step: 0.005 },
+        { key: 'inner', label: 'Inner radius', min: 0.05, max: 0.95, step: 0.01 },
+        { key: 'outer', label: 'Outer radius', min: 0.05, max: 0.95, step: 0.01 },
+        {
+          key: 'shape',
+          label: 'Shape',
+          options: [
+            ['dot', 'dots'],
+            ['semicircle', 'semicircles'],
+            ['mark', 'marks'],
+          ],
+        },
+        { key: 'size', label: 'Size', min: 0.005, max: 0.15, step: 0.005 },
+        { key: 'width', label: 'Pen width', min: 0.005, max: 0.1, step: 0.005 },
+        {
+          key: 'bulge',
+          label: 'Bulges',
+          options: [
+            ['in', 'towards the centre'],
+            ['out', 'towards the rim'],
+          ],
+        },
+        ALIGN,
+        OFFSET,
+        // Shapes further out lag further behind (against the spin), by up to `trail` of a
+        // spacing at the outer radius, as if thrown from the inner end.
+        { key: 'trail', label: 'Trail', min: -3, max: 3, step: 0.05, signed: true },
+        WOBBLE,
+      ],
+      defaults: {
+        count: 13,
+        turns: 1,
+        pattern: 'loop',
+        climb: 'cw',
+        from: null,
+        gap: 0.02,
+        inner: 0.3,
+        outer: 0.7,
+        shape: 'dot',
+        size: 0.03,
+        width: 0.02,
+        bulge: 'in',
+        align: null,
+        offset: 0,
+        trail: 0,
+        wobble: 0.3,
+      },
+      wobbly: true,
+    },
   };
 
   let nextId = 1;
@@ -164,7 +241,7 @@
     let v = Number(value);
     if (!Number.isFinite(v)) return false;
     if (field.integer) v = Math.round(v);
-    move[key] = field.key === 'offset' ? v : Math.max(field.min, v); // an offset may go either way
+    move[key] = field.signed ? v : Math.max(field.min, v);
     return true;
   }
 
@@ -202,6 +279,26 @@
     move.seed = newSeed();
   }
 
+  // Rebuild moves from saved data (e.g. a file), keeping their ids, seeds and any valid
+  // fields. Unknown move types and fields are skipped; missing fields keep their defaults.
+  // New moves made afterwards get ids above the loaded ones.
+  function movesFromSaved(saved) {
+    if (!Array.isArray(saved)) throw new Error('No list of moves found.');
+    const moves = [];
+    for (const data of saved) {
+      if (!data || !MOVE_TYPES[data.type] || !Number.isInteger(data.id)) continue;
+      const move = createMove(data.type);
+      move.id = data.id;
+      if (Number.isInteger(data.seed)) move.seed = data.seed;
+      for (const field of MOVE_TYPES[data.type].fields) {
+        if (field.key in data) setField(move, field.key, data[field.key]);
+      }
+      moves.push(move);
+      nextId = Math.max(nextId, move.id + 1);
+    }
+    return moves;
+  }
+
   // The starting recipe: a blank wheel, built up by adding moves.
   function defaultRecipe() {
     return { moves: [] };
@@ -224,6 +321,7 @@
     for (const m of recipe.moves) {
       if (m.attach === id) m.attach = null;
       if (m.align === id) m.align = null;
+      if (m.from === id) m.from = null;
     }
     return true;
   }
@@ -254,10 +352,46 @@
   // The radius a move is actually drawn at. An attached move sits with its flat side on
   // the inner or outer edge of its circle's pen stroke, so it follows that circle.
   function effectiveRadius(recipe, move) {
+    if (move.type === 'stepped') return (steppedInner(recipe, move) + move.outer) / 2; // its middle, for sorting
     const circle = attachedCircle(recipe, move);
     if (!circle) return move.radius;
     const half = circle.width / 2;
     return move.edge === 'outer' ? circle.radius + half : Math.max(0, circle.radius - half);
+  }
+
+  // The ring a stepped ring starts beyond, or null if none (or it no longer exists).
+  function startRing(recipe, move) {
+    if (move.from == null) return null;
+    return recipe.moves.find((m) => m.id === move.from && MOVE_TYPES[m.type].counted) || null;
+  }
+
+  // How far out a ring's shapes reach from the centre.
+  function ringReach(recipe, move, seen = new Set()) {
+    const r = effectiveRadius(recipe, move);
+    if (move.type === 'marks') return r + move.length / 2;
+    if (move.type === 'semicircles') return r + (move.bulge === 'out' ? move.size : 0);
+    if (move.type === 'stepped') {
+      return Math.max(steppedInner(recipe, move, seen), move.outer) + move.size;
+    }
+    return r; // nibbles: the circle's edge
+  }
+
+  // A stepped ring's inner radius: its own, or `gap` beyond the reach of the ring it starts
+  // from. A loop of rings starting from each other stops at the first ring met twice.
+  function steppedInner(recipe, move, seen = new Set()) {
+    const from = startRing(recipe, move);
+    if (!from || seen.has(move.id)) return move.inner;
+    seen.add(move.id);
+    return ringReach(recipe, from, seen) + move.gap;
+  }
+
+  // The value a number field shows: where the move is really drawn, for fields that follow
+  // another move (radius on an attached ring, inner radius on a stepped ring that starts
+  // beyond another), otherwise the move's own value.
+  function shownValue(recipe, move, key) {
+    if (key === 'radius') return effectiveRadius(recipe, move);
+    if (key === 'inner' && move.type === 'stepped') return steppedInner(recipe, move);
+    return move[key];
   }
 
   // Whether a field has no effect for this move as it stands, so the form can grey it out.
@@ -265,7 +399,60 @@
     const attached = attachedCircle(recipe, move) !== null;
     if (key === 'radius') return attached;
     if (key === 'edge') return !attached;
+    if (move.type === 'stepped') {
+      const starts = startRing(recipe, move) !== null;
+      if (key === 'inner') return starts;
+      if (key === 'gap') return !starts;
+      if (key === 'width') return move.shape === 'dot';
+      if (key === 'bulge') return move.shape !== 'semicircle';
+    }
     return false;
+  }
+
+  // The radius of each shape in a stepped ring, in order round the wheel: `count × turns`
+  // shapes climbing from inner to outer radius. Out only climbs all the way, then jumps
+  // back (a seam). Out and back climbs for the first half and comes back for the second,
+  // so the last shape leads smoothly into the first.
+  function steppedRadii(move) {
+    const total = move.count * move.turns;
+    const climb = (u) => move.inner + (move.outer - move.inner) * u;
+    const radii = [];
+    for (let k = 0; k < total; k++) {
+      if (move.pattern === 'out') radii.push(climb(total > 1 ? k / (total - 1) : 0));
+      else radii.push(climb(k <= total / 2 ? (2 * k) / total : (2 * (total - k)) / total));
+    }
+    return radii;
+  }
+
+  // How a stepped ring reads under a strobe that turns the wheel `step` radians per flash.
+  // Each flash, the wheel moves on about `skip` whole spacings, so at every position the
+  // shape `skip` places back along the sequence takes over (or forward, if it climbs
+  // anticlockwise). Returns 'in' or 'out' (a spiral), 'breathes' (out and back: half the
+  // ring moves out and half in) or 'still' (no whole spacings skipped: no radial motion),
+  // plus `strain`: how far the radius moves per flash compared with the gap between
+  // neighbouring shapes (near 1 the eye may match a neighbour instead), `flashes`: how
+  // many flashes a shape takes to travel from the inner radius to the outer one, at one
+  // step along the sequence per skipped spacing, and `lag`: how much trail changes each
+  // shape's apparent turn per flash on the way out (radians, clockwise positive), on top
+  // of the ring's drift.
+  function spiralReading(move, step) {
+    const a = TAU / move.count;
+    const skip = Math.round(step / a);
+    const radii = steppedRadii(move);
+    const rise = radii.length > 1 ? Math.abs(radii[1] - radii[0]) : 0;
+    const gap = Math.max(1e-9, Math.min(move.inner, move.outer) * a);
+    const strain = (Math.abs(skip) * rise) / gap;
+    const outSteps = move.pattern === 'out' ? radii.length - 1 : radii.length / 2;
+    const flashes = skip === 0 ? Infinity : outSteps / Math.abs(skip);
+    // Trail sets shapes back by up to `trail` spacings over the climb: each step along the
+    // sequence lags a further trail·a/outSteps, which the strobe turns into a slower (or,
+    // climbing clockwise, faster) apparent turn.
+    const turn = move.climb === 'cw' ? 1 : -1;
+    const lag = outSteps > 0 ? (skip * turn * (move.trail || 0) * a) / outSteps : 0;
+    if (skip === 0 || rise === 0) return { reading: 'still', skip, strain, flashes, lag: 0 };
+    if (move.pattern === 'loop') return { reading: 'breathes', skip, strain, flashes, lag };
+    const inward = skip * turn > 0;
+    return { reading: inward ? 'in' : 'out', skip, strain, flashes, lag };
   }
 
   // The recipe as drawn: copies of the moves with attachments and alignments worked out
@@ -273,6 +460,7 @@
   function resolve(recipe) {
     const moves = recipe.moves.map((m) => {
       const copy = { ...m, radius: effectiveRadius(recipe, m) };
+      if (m.type === 'stepped') copy.inner = steppedInner(recipe, m);
       if (MOVE_TYPES[m.type].counted) copy.phase = phaseOf(recipe, m);
       return copy;
     });
@@ -327,13 +515,20 @@
     defaultRecipe,
     addMove,
     appendMove,
+    movesFromSaved,
     removeMove,
     shiftMove,
     attachedCircle,
     alignedRing,
     phaseOf,
     effectiveRadius,
+    startRing,
+    ringReach,
+    steppedInner,
+    shownValue,
     fieldInactive,
+    steppedRadii,
+    spiralReading,
     resolve,
     wobbleOf,
     rewobble,

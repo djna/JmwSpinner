@@ -4,7 +4,7 @@
   'use strict';
 
   const { TAU } = root.JmwMaths;
-  const { wobbleOf } = root.JmwRecipe;
+  const { wobbleOf, steppedRadii } = root.JmwRecipe;
 
   const INK = '#1d1d24';
   const BOARD = '#fbfbf8';
@@ -56,27 +56,87 @@
     });
   }
 
+  // Single shapes, centred at radius `r` and angle `theta` (canvas angle, 0 along +x).
+  // `j` is the shape's wobble (see JmwRecipe.wobbleOf), applied to size, tilt and pen width.
+
+  // A short stroke along the radius.
+  function markAt(c, r, theta, length, width, j) {
+    const half = (length * j.scale) / 2;
+    const dx = half * Math.cos(theta + j.tilt);
+    const dy = half * Math.sin(theta + j.tilt);
+    const cx = r * Math.cos(theta);
+    const cy = r * Math.sin(theta);
+    c.lineCap = 'round';
+    c.strokeStyle = INK;
+    c.lineWidth = width * j.width;
+    c.beginPath();
+    c.moveTo(cx - dx, cy - dy);
+    c.lineTo(cx + dx, cy + dy);
+    c.stroke();
+  }
+
+  // A semicircle whose flat side lies along the ring, bulging in towards the centre or out.
+  function semicircleAt(c, r, theta, size, width, bulge, j) {
+    // Angles on the ellipse are measured from its outward radial axis.
+    const start = bulge === 'in' ? Math.PI / 2 : -Math.PI / 2;
+    const along = size * j.scale; // half the flat side
+    const depth = along * j.squash; // how far the curve bulges
+    c.lineCap = 'round';
+    c.strokeStyle = INK;
+    c.lineWidth = width * j.width;
+    c.beginPath();
+    c.ellipse(r * Math.cos(theta), r * Math.sin(theta), depth, along, theta + j.tilt, start, start + Math.PI);
+    c.stroke();
+  }
+
+  // A filled dot, `size` in radius.
+  function dotAt(c, r, theta, size, j) {
+    c.fillStyle = INK;
+    c.beginPath();
+    c.ellipse(r * Math.cos(theta), r * Math.sin(theta), size * j.scale * j.squash, size * j.scale, theta + j.tilt, 0, TAU);
+    c.fill();
+  }
+
   // A ring of short radial marks, evenly spaced, starting at the top (or at `phase`).
   // With wobble, each is slightly off in place, length, tilt and pen width.
   function drawMarkRing(c, move) {
     const spacing = TAU / move.count;
-    c.lineCap = 'round';
-    c.strokeStyle = INK;
     for (let k = 0; k < move.count; k++) {
       const j = wobbleOf(move, k);
       const theta = (k + j.angle) * spacing + (move.phase || 0) - Math.PI / 2;
-      const r = move.radius + j.radial * move.length;
-      const cx = r * Math.cos(theta);
-      const cy = r * Math.sin(theta);
-      const half = (move.length * j.scale) / 2;
-      const dx = half * Math.cos(theta + j.tilt);
-      const dy = half * Math.sin(theta + j.tilt);
-      c.lineWidth = move.width * j.width;
-      c.beginPath();
-      c.moveTo(cx - dx, cy - dy);
-      c.lineTo(cx + dx, cy + dy);
-      c.stroke();
+      markAt(c, move.radius + j.radial * move.length, theta, move.length, move.width, j);
     }
+  }
+
+  // A ring of small semicircles, evenly spaced, starting at the top (or at `phase`). Each
+  // one's flat side lies along the ring and its curve bulges towards the centre or towards
+  // the rim. With wobble, each is slightly off in place, size, shape, tilt and pen width.
+  function drawSemicircleRing(c, move) {
+    const spacing = TAU / move.count;
+    for (let k = 0; k < move.count; k++) {
+      const j = wobbleOf(move, k);
+      const theta = (k + j.angle) * spacing + (move.phase || 0) - Math.PI / 2;
+      semicircleAt(c, move.radius + j.radial * move.size, theta, move.size, move.width, move.bulge, j);
+    }
+  }
+
+  // A stepped ring: dots, semicircles or marks at the ring's positions, going round
+  // clockwise or anticlockwise, each at the next radius in the sequence (steppedRadii).
+  // With trail, each lags behind its position (anticlockwise, against the spin) in
+  // proportion to how far out it is.
+  function drawSteppedRing(c, move) {
+    const spacing = TAU / move.count;
+    const turn = move.climb === 'acw' ? -1 : 1;
+    const range = move.outer - move.inner;
+    steppedRadii(move).forEach((radius, k) => {
+      const j = wobbleOf(move, k);
+      const lag = (move.trail || 0) * (range ? (radius - move.inner) / range : 0) * spacing;
+      const theta = turn * (k + j.angle) * spacing + (move.phase || 0) - lag - Math.PI / 2;
+      const r = radius + j.radial * move.size;
+      if (move.shape === 'dot') dotAt(c, r, theta, move.size, j);
+      else if (move.shape === 'mark') markAt(c, r, theta, 2 * move.size, move.width, j);
+      else semicircleAt(c, r, theta, move.size, move.width, move.bulge, j);
+    });
   }
 
   // A circle in one wide pen stroke, drawn by turning the wheel under a pen held at the top.
@@ -104,28 +164,6 @@
       c.arc(0, 0, move.radius, -Math.PI / 2 - sweep * TAU, -Math.PI / 2);
     }
     c.stroke();
-  }
-
-  // A ring of small semicircles, evenly spaced, starting at the top (or at `phase`). Each
-  // one's flat side lies along the ring and its curve bulges towards the centre or towards
-  // the rim. With wobble, each is slightly off in place, size, shape, tilt and pen width.
-  function drawSemicircleRing(c, move) {
-    const spacing = TAU / move.count;
-    // Angles on each ellipse are measured from its outward radial axis.
-    const start = move.bulge === 'in' ? Math.PI / 2 : -Math.PI / 2;
-    c.lineCap = 'round';
-    c.strokeStyle = INK;
-    for (let k = 0; k < move.count; k++) {
-      const j = wobbleOf(move, k);
-      const theta = (k + j.angle) * spacing + (move.phase || 0) - Math.PI / 2;
-      const r = move.radius + j.radial * move.size;
-      const along = move.size * j.scale; // half the flat side
-      const depth = along * j.squash; // how far the curve bulges
-      c.lineWidth = move.width * j.width;
-      c.beginPath();
-      c.ellipse(r * Math.cos(theta), r * Math.sin(theta), depth, along, theta + j.tilt, start, start + Math.PI);
-      c.stroke();
-    }
   }
 
   // Fill the bites of one nibble ring, each centred on the circle's edge so it cuts `depth`
@@ -179,6 +217,7 @@
     circle: drawSolidCircle,
     marks: drawMarkRing,
     semicircles: drawSemicircleRing,
+    stepped: drawSteppedRing,
     nibbles: () => {}, // drawn as holes in their circle (see drawSolidCircle)
   };
 

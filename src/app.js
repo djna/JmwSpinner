@@ -105,8 +105,8 @@
     const range = el('input', { type: 'range', id, min: field.min, max: field.max, step: field.step });
     const box = el('input', { type: 'number', min: field.min, step: field.integer ? 1 : 'any' });
     box.setAttribute('aria-label', field.label);
-    // Radius shows where the move is actually drawn, which follows an attached circle.
-    const shown = () => (field.key === 'radius' ? Rc.effectiveRadius(recipe, move) : move[field.key]);
+    // Shows where the move is actually drawn, for fields that can follow another move.
+    const shown = () => Rc.shownValue(recipe, move, field.key);
     const show = () => {
       range.value = shown();
       box.value = Number(shown().toFixed(4));
@@ -184,6 +184,7 @@
   function renderDraft() {
     if (!Rc.attachedCircle(recipe, draft)) Rc.setField(draft, 'attach', null); // its circle was removed
     if (!Rc.alignedRing(recipe, draft)) Rc.setField(draft, 'align', null);
+    if (draft.type === 'stepped' && !Rc.startRing(recipe, draft)) Rc.setField(draft, 'from', null);
     if (draft.type === 'nibbles' && draft.attach === null) {
       // Nibbles only show in a circle, so start them on the most recent one.
       const circles = recipe.moves.filter((m) => m.type === 'circle');
@@ -266,7 +267,7 @@
 
   // --- Drawing a circle: the wheel makes one slow turn under the pen.
 
-  const DRAW_SECONDS = 6;
+  const DRAW_SECONDS = 2;
   let drawing = null; // { id, start, progress } while a circle is being drawn
 
   function startDrawing(move) {
@@ -305,7 +306,43 @@
 
     return `<p><b>${moveName(move)}</b> (${n} ${Rc.MOVE_TYPES[move.type].noun}, ${fmt(deg(a))}° apart) appears to move
       <b>${fmt(deg(d))}°</b> per flash, about <b>${fmt(deg(d) * params.strobe, 1)}°/s</b>,
-      so it ${describeDirection(d)}.${warning}</p>`;
+      so it ${describeDirection(d)}.${move.type === 'stepped' ? describeSpiral(move, s) : ''}${warning}</p>`;
+  }
+
+  const SPIRAL_READINGS = {
+    in: 'spirals <b>inward</b>',
+    out: 'spirals <b>outward</b>',
+    breathes: '<b>breathes</b>: half the ring moves outward while the other half moves inward',
+    still: 'shows <b>no in or out motion</b>, because the wheel skips no whole spacings between flashes',
+  };
+
+  // How long a shape takes to travel between the inner and outer radius, and how far round
+  // the wheel it drifts meanwhile: one step along the sequence per flash, so a longer
+  // flight needs more shapes (more turns) or more drift per flash.
+  function describeFlight(move, s, flashes, lag) {
+    const d = deg(M.apparentStep(s, move.count) + lag);
+    const sweep = Math.abs(d * flashes);
+    const way = Math.abs(d) < 1e-9 ? '' : d > 0 ? ' clockwise' : ' anticlockwise';
+    const leg = move.pattern === 'out' ? 'to travel between the inner and outer radius' : 'to travel out';
+    return `Each shape takes <b>${fmt(flashes / params.strobe)} s</b> (${fmt(flashes, 0)} flashes) ${leg},
+      drifting <b>${fmt(sweep, 0)}°</b>${way} on the way. For a longer flight, add turns or drift faster.`;
+  }
+
+  // How a stepped ring reads in or out at this strobe setting, and whether it will hold up.
+  function describeSpiral(move, s) {
+    const drawn = Rc.resolve(recipe).moves.find((m) => m.id === move.id); // inner radius worked out
+    const { reading, skip, strain, flashes, lag } = Rc.spiralReading(drawn, s);
+    const shapes = move.count * move.turns;
+    const why = reading === 'still' ? '' : ` (the wheel skips ${Math.abs(skip)} spacing${Math.abs(skip) === 1 ? '' : 's'} per flash)`;
+    let text = ` With its ${shapes} shapes it ${SPIRAL_READINGS[reading]}${why}.`;
+    if (reading !== 'still') text += ` ${describeFlight(move, s, flashes, lag)}`;
+    if (reading === 'in' || reading === 'out') {
+      text += ` Switch <i>Climbs</i> to make it spiral ${reading === 'in' ? 'outward' : 'inward'}.`;
+    }
+    if (strain > 0.75) {
+      text += ` <span class="warn">The radius changes a lot between neighbouring shapes, so the eye may match the wrong ones and the motion may break up. Try more positions, more turns or a smaller radius range.</span>`;
+    }
+    return text;
   }
 
   function updateReadout() {
@@ -450,10 +487,100 @@
   undoButton.addEventListener('click', () => restore(H.undo(history)));
   redoButton.addEventListener('click', () => restore(H.redo(history)));
 
+  // --- Save and open: the whole setup (recipe, rates, afterglow, solver choices) as a
+  // JSON file. Opening a file is a step that can be undone.
+
+  const FILE_FORMAT = 'jmwspinner';
+  const fileStatus = document.getElementById('file-status');
+  const openInput = document.getElementById('open-file');
+  const m1Box = document.getElementById('m1');
+  const m2Box = document.getElementById('m2');
+
+  function setupData() {
+    return {
+      format: FILE_FORMAT,
+      version: 1,
+      saved: new Date().toISOString(),
+      moves: recipe.moves,
+      spin: params.spin,
+      strobe: params.strobe,
+      afterglow: params.afterglow,
+      solver: { pair: pairChosen ? pair : null, m1: Number(m1Box.value), m2: Number(m2Box.value) },
+    };
+  }
+
+  function fileName() {
+    const t = new Date();
+    const two = (n) => String(n).padStart(2, '0');
+    return `jmwspinner-${t.getFullYear()}-${two(t.getMonth() + 1)}-${two(t.getDate())}-${two(t.getHours())}${two(t.getMinutes())}.json`;
+  }
+
+  // Use the browser's save dialog where there is one (Chrome, Edge), else a download.
+  async function saveSetup() {
+    const text = JSON.stringify(setupData(), null, 2);
+    try {
+      if (window.showSaveFilePicker) {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: fileName(),
+          types: [{ description: 'JmwSpinner setup', accept: { 'application/json': ['.json'] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(text);
+        await writable.close();
+        fileStatus.textContent = `Saved ${handle.name}.`;
+      } else {
+        const link = el('a', { href: URL.createObjectURL(new Blob([text], { type: 'application/json' })), download: fileName() });
+        link.click();
+        URL.revokeObjectURL(link.href);
+        fileStatus.textContent = `Saved ${link.download} to your downloads.`;
+      }
+    } catch (error) {
+      if (error.name !== 'AbortError') fileStatus.textContent = `Could not save: ${error.message}`;
+    }
+  }
+
+  function openSetup(text, name) {
+    let data;
+    try {
+      data = JSON.parse(text);
+      if (!data || data.format !== FILE_FORMAT) throw new Error('This is not a JmwSpinner setup file.');
+      recipe.moves = Rc.movesFromSaved(data.moves);
+    } catch (error) {
+      fileStatus.textContent = `Could not open ${name}: ${error.message}`;
+      return;
+    }
+    drawing = null;
+    if (Number.isFinite(data.spin)) setters.spin(data.spin);
+    if (Number.isFinite(data.strobe) && data.strobe > 0) setters.strobe(data.strobe);
+    if (Number.isFinite(data.afterglow)) setters.afterglow(data.afterglow);
+    const solver = data.solver || {};
+    pair = Array.isArray(solver.pair) ? solver.pair : null;
+    pairChosen = pair !== null;
+    if (Number.isFinite(solver.m1)) m1Box.value = solver.m1;
+    if (Number.isFinite(solver.m2)) m2Box.value = solver.m2;
+    recipeChanged();
+    remember();
+    fileStatus.textContent = `Opened ${name}.`;
+  }
+
+  document.getElementById('save').addEventListener('click', saveSetup);
+  document.getElementById('open').addEventListener('click', () => openInput.click());
+  openInput.addEventListener('change', async () => {
+    const file = openInput.files[0];
+    if (file) openSetup(await file.text(), file.name);
+    openInput.value = ''; // so the same file can be opened again
+  });
+
   // ⌘Z / Ctrl+Z to undo; ⇧⌘Z, ⇧Ctrl+Z or Ctrl+Y to redo. Left alone while typing in a
-  // number box, where the browser's own text undo applies.
+  // number box, where the browser's own text undo applies. ⌘S / ⌘O save and open.
   document.addEventListener('keydown', (event) => {
     if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+    if (event.key.toLowerCase() === 's' || event.key.toLowerCase() === 'o') {
+      event.preventDefault();
+      if (event.key.toLowerCase() === 's') saveSetup();
+      else openInput.click();
+      return;
+    }
     if (event.target.matches?.('input[type="number"]')) return;
     const key = event.key.toLowerCase();
     if (key === 'z' && !event.shiftKey) restore(H.undo(history));
