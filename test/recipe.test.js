@@ -168,3 +168,11 @@ test('a new wobble changes the imperfections', () => {
   assert.notEqual(move.seed, 1);
   assert.notDeepEqual(R.wobbleOf(move, 0), before);
 });
+
+test('marks and semicircles can wobble, a solid circle cannot', () => {
+  assert.equal(R.MOVE_TYPES.marks.wobbly, true);
+  assert.equal(R.MOVE_TYPES.semicircles.wobbly, true);
+  assert.ok(!R.MOVE_TYPES.circle.wobbly);
+  assert.equal(typeof R.createMove('marks').seed, 'number');
+  assert.equal(R.setField(R.createMove('circle'), 'wobble', 0.5), false);
+});

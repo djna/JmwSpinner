@@ -10,6 +10,9 @@
   // `circleRef` field holds the id of a solid circle in the recipe (or null for none).
   const COUNT = { key: 'count', label: 'Count', min: 1, max: 72, step: 1, integer: true };
   const RADIUS = { key: 'radius', label: 'Radius', min: 0.05, max: 0.95, step: 0.01 };
+  // Hand-drawn imperfection for moves drawn shape by shape (see wobbleOf). A solid circle
+  // has none: the pen is held still while the wheel turns, so it comes out true.
+  const WOBBLE = { key: 'wobble', label: 'Wobble', min: 0, max: 1, step: 0.05 };
 
   const MOVE_TYPES = {
     circle: {
@@ -27,8 +30,10 @@
         RADIUS,
         { key: 'length', label: 'Length', min: 0.02, max: 0.3, step: 0.005 },
         { key: 'width', label: 'Pen width', min: 0.005, max: 0.1, step: 0.005 },
+        WOBBLE,
       ],
-      defaults: { count: 12, radius: 0.8, length: 0.1, width: 0.03 },
+      defaults: { count: 12, radius: 0.8, length: 0.1, width: 0.03, wobble: 0.3 },
+      wobbly: true,
     },
     semicircles: {
       label: 'Ring of semicircles',
@@ -56,7 +61,7 @@
             ['out', 'towards the rim'],
           ],
         },
-        { key: 'wobble', label: 'Wobble', min: 0, max: 1, step: 0.05 },
+        WOBBLE,
       ],
       defaults: {
         count: 13,
@@ -124,7 +129,8 @@
 
   // How the k-th shape of a wobbly move differs from a perfect one, as if drawn by hand.
   // Scaled by the move's `wobble` (0 is perfect): `angle` is a fraction of the spacing,
-  // `radial` a fraction of the shape's size, `tilt` in radians, the rest are multipliers.
+  // `radial` a fraction of the shape's size (a mark's length), `tilt` in radians, the rest
+  // are multipliers. Marks use all but `squash`.
   function wobbleOf(move, k) {
     const w = move.wobble || 0;
     const random = seededRandom(Math.imul(move.seed || 0, 1000003) + k);

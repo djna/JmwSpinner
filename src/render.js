@@ -56,23 +56,27 @@
     });
   }
 
-  // A ring of short radial marks, evenly spaced, starting at the top.
+  // A ring of short radial marks, evenly spaced, starting at the top. With wobble, each is
+  // slightly off in place, length, tilt and pen width.
   function drawMarkRing(c, move) {
     const spacing = TAU / move.count;
-    const inner = move.radius - move.length / 2;
-    const outer = move.radius + move.length / 2;
-    c.lineWidth = move.width;
     c.lineCap = 'round';
     c.strokeStyle = INK;
-    c.beginPath();
     for (let k = 0; k < move.count; k++) {
-      const theta = k * spacing - Math.PI / 2;
-      const x = Math.cos(theta);
-      const y = Math.sin(theta);
-      c.moveTo(inner * x, inner * y);
-      c.lineTo(outer * x, outer * y);
+      const j = wobbleOf(move, k);
+      const theta = (k + j.angle) * spacing - Math.PI / 2;
+      const r = move.radius + j.radial * move.length;
+      const cx = r * Math.cos(theta);
+      const cy = r * Math.sin(theta);
+      const half = (move.length * j.scale) / 2;
+      const dx = half * Math.cos(theta + j.tilt);
+      const dy = half * Math.sin(theta + j.tilt);
+      c.lineWidth = move.width * j.width;
+      c.beginPath();
+      c.moveTo(cx - dx, cy - dy);
+      c.lineTo(cx + dx, cy + dy);
+      c.stroke();
     }
-    c.stroke();
   }
 
   // A circle in one wide pen stroke, drawn by turning the wheel under a pen held at the top.
