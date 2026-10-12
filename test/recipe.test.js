@@ -434,3 +434,17 @@ test('under the strobe a wing seems to turn by the drift less the lean of the sk
   R.setField(wings, 'spins', 0);
   close(R.wingSpin(wings, a + 0.02), 0.02); // no lean: only the drift
 });
+
+test('birds and bats step through a wingbeat along the sequence', () => {
+  const recipe = R.defaultRecipe();
+  const move = R.addMove(recipe, 'stepped');
+  R.setField(move, 'shape', 'bird');
+  assert.equal(R.fieldInactive(recipe, move, 'flap'), false);
+  assert.equal(R.fieldInactive(recipe, move, 'width'), false);
+  const beat = [0, 1, 2, 3, 4].map((k) => Math.round(R.flapOf(move, k) * 1e9) / 1e9 + 0); // -0 to 0
+  assert.deepEqual(beat, [1, 0, -1, 0, 1]); // 4 drawings per beat: up, level, down, level, up
+  R.setField(move, 'flap', 0);
+  assert.equal(R.flapOf(move, 3), 0.5); // still wings
+  R.setField(move, 'shape', 'dot');
+  assert.equal(R.fieldInactive(recipe, move, 'flap'), true);
+});
