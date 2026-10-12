@@ -5,6 +5,7 @@
   const M = window.JmwMaths;
   const R = window.JmwRender;
   const Rc = window.JmwRecipe;
+  const H = window.JmwHistory;
 
   const MAX_FLASHES_PER_FRAME = 64;
 
@@ -57,10 +58,18 @@
     return `${recipe.moves.indexOf(move) + 1}. ${Rc.MOVE_TYPES[move.type].label}`;
   }
 
-  // The choices for a circle reference: none, or any solid circle in the recipe.
-  function circleOptions() {
-    const options = [['', 'nothing (own radius)']];
-    for (const m of recipe.moves) if (m.type === 'circle') options.push([m.id, moveName(m)]);
+  // The choices for a reference field: none, or another move of the right kind. A ring
+  // shows its count, since rings line up shape for shape when their counts match or divide.
+  function refOptions(move, field) {
+    if (field.ref === 'circle') {
+      const options = [['', 'nothing (own radius)']];
+      for (const m of recipe.moves) if (m.type === 'circle') options.push([m.id, moveName(m)]);
+      return options;
+    }
+    const options = [['', 'the top of the wheel']];
+    for (const m of Rc.countedMoves(recipe)) {
+      if (m.id !== move.id) options.push([m.id, `${moveName(m)} (${m.count})`]);
+    }
     return options;
   }
 
@@ -78,15 +87,15 @@
     const id = `move${move.id}-${field.key}`;
     const label = el('label', { for: id }, field.label);
 
-    if (field.options || field.circleRef) {
+    if (field.options || field.ref) {
       const select = el('select', { id, class: 'wide' });
-      for (const [value, text] of field.options || circleOptions()) {
-        select.append(el('option', { value }, text));
-      }
+      const fill = (options) => select.replaceChildren(...options.map(([value, text]) => el('option', { value }, text)));
+      if (field.options) fill(field.options);
       select.addEventListener('change', () => {
         if (Rc.setField(move, field.key, select.value)) onChange();
       });
       syncList.push(() => {
+        if (field.ref) fill(refOptions(move, field)); // names and counts may have changed
         select.value = move[field.key] ?? '';
         markInactive(move, field, label, [select]);
       });
@@ -131,12 +140,14 @@
       button.addEventListener('click', () => {
         act();
         recipeChanged();
+        remember();
       });
       head.append(button);
     }
     card.append(head);
 
     card.append(fieldsGrid(move, redrawRecipe, syncs));
+    card.addEventListener('change', remember); // a slider let go, a box or choice changed
     return card;
   }
 
@@ -172,6 +183,12 @@
 
   function renderDraft() {
     if (!Rc.attachedCircle(recipe, draft)) Rc.setField(draft, 'attach', null); // its circle was removed
+    if (!Rc.alignedRing(recipe, draft)) Rc.setField(draft, 'align', null);
+    if (draft.type === 'nibbles' && draft.attach === null) {
+      // Nibbles only show in a circle, so start them on the most recent one.
+      const circles = recipe.moves.filter((m) => m.type === 'circle');
+      if (circles.length) Rc.setField(draft, 'attach', circles[circles.length - 1].id);
+    }
     draftSyncs = [];
 
     const head = el('div', { class: 'move-head' });
@@ -191,6 +208,7 @@
       draft = Rc.createMove(move.type);
       if (move.type === 'circle') startDrawing(move);
       recipeChanged();
+      remember();
     });
 
     draftCard.replaceChildren(head, fieldsGrid(draft, syncDraft, draftSyncs), drawButton);
@@ -397,6 +415,53 @@
     requestAnimationFrame(frame);
   }
 
+  // --- Undo and redo. A snapshot is the recipe plus the spin and strobe rates (which the
+  // solver changes). A step is recorded after each finished change: a slider let go, a box
+  // or choice changed, a button pressed. Afterglow and the New move card are not included.
+
+  let history = null;
+  const undoButton = document.getElementById('undo');
+  const redoButton = document.getElementById('redo');
+
+  function snapshot() {
+    return JSON.stringify({ moves: recipe.moves, spin: params.spin, strobe: params.strobe });
+  }
+
+  function updateHistoryButtons() {
+    undoButton.disabled = !H.canUndo(history);
+    redoButton.disabled = !H.canRedo(history);
+  }
+
+  function remember() {
+    if (H.commit(history, snapshot())) updateHistoryButtons();
+  }
+
+  function restore(state) {
+    if (state === null) return;
+    const { moves, spin, strobe } = JSON.parse(state);
+    recipe.moves = moves;
+    drawing = null;
+    setters.spin(spin);
+    setters.strobe(strobe);
+    recipeChanged();
+    updateHistoryButtons();
+  }
+
+  undoButton.addEventListener('click', () => restore(H.undo(history)));
+  redoButton.addEventListener('click', () => restore(H.redo(history)));
+
+  // ⌘Z / Ctrl+Z to undo; ⇧⌘Z, ⇧Ctrl+Z or Ctrl+Y to redo. Left alone while typing in a
+  // number box, where the browser's own text undo applies.
+  document.addEventListener('keydown', (event) => {
+    if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+    if (event.target.matches?.('input[type="number"]')) return;
+    const key = event.key.toLowerCase();
+    if (key === 'z' && !event.shiftKey) restore(H.undo(history));
+    else if ((key === 'z' && event.shiftKey) || key === 'y') restore(H.redo(history));
+    else return;
+    event.preventDefault();
+  });
+
   // --- Wiring.
 
   bindControl('spin', updateReadout);
@@ -406,8 +471,15 @@
   });
   bindControl('afterglow', () => {});
 
-  document.getElementById('solve-strobe').addEventListener('click', () => solve('strobe'));
-  document.getElementById('solve-spin').addEventListener('click', () => solve('spin'));
+  document.getElementById('spin').closest('fieldset').addEventListener('change', remember);
+  document.getElementById('solve-strobe').addEventListener('click', () => {
+    solve('strobe');
+    remember();
+  });
+  document.getElementById('solve-spin').addEventListener('click', () => {
+    solve('spin');
+    remember();
+  });
 
   const pauseButton = document.getElementById('pause');
   pauseButton.addEventListener('click', () => {
@@ -420,5 +492,6 @@
 
   renderCards();
   rebuildLayers();
+  history = H.createHistory(snapshot());
   requestAnimationFrame(frame);
 })();

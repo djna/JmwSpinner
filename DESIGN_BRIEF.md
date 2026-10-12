@@ -15,9 +15,10 @@ Simple trunk model: `main` is the trunk, with short-lived branches for specific 
 1. **First slice** (done, `feature/first-slice`): one ring of marks, wheel and strobe views, spin/strobe/afterglow controls, strobe maths readout.
 2. **Second ring and strobe solver** (done, `feature/second-ring`): two rings, and solving the strobe rate (keeping spin) or the spin rate (keeping strobe) for equal and opposite drift, with the skip counts `m1`, `m2` adjustable.
 3. **More moves and an editable recipe** (done, `feature/more-moves`): solid circle, ring of semicircles; add, remove and reorder moves. A ring of semicircles can attach to the inner or outer edge of a solid circle and follow it, with the bulge direction chosen separately (prongs or hoops). Rings of marks and semicircles have a configurable wobble (seeded hand-drawn imperfections) that gives a living pulse under the strobe; a solid circle needs none, since the pen is held still while the wheel turns. A move is configured before it is drawn, and a solid circle is drawn by turning the wheel under a pen. The solver works on any two counted rings (rings A and B), defaulting to the outermost and innermost.
-4. **Stepped ring**: out-only and loop-back, with the spiral-direction indicator.
-5. **Snapping and ghost guides.**
-6. **Later**: guided step-by-step recipe, then freehand strokes.
+4. **Nibbles and alignment** (done, `feature/nibbles`): rings of bites cut into a solid circle from its inner or outer edge, semicircular or cog-shaped (square notch), with wobble. Every counted ring can align with another ring and be offset by a fraction of its spacing (0 in line, 0.5 halfway between); shapes line up one for one when the counts match or divide. Also undo and redo for the recipe and the spin and strobe rates.
+5. **Stepped ring**: out-only and loop-back, with the spiral-direction indicator. Note from planning: whether it reads as spiralling in or out depends on the whole spacings skipped per flash (`round(s/a)`) and which way round the radius climbs; the leftover drift `d_N` sets the twist. Loop-back avoids the seam but sends half the ring out and half in.
+6. **Snapping and ghost guides.**
+7. **Later**: guided step-by-step recipe, then freehand strokes.
 
 ## Goal
 
@@ -68,7 +69,7 @@ The tool should be able to **solve for the strobe rate from the chosen mark coun
 - **Drawing as a recipe, not pixels.** Store each move as parameters (ring radius, mark count, shape, phase, radial step, etc.) and re-render from them. Changing any value redraws everything. This fits the "configurable values" goal. Freehand strokes can be a later, separate feature.
 - **Two views.** A static "wheel" view (what the artist is drawing, in the wheel's own frame) and a "strobe" view (what the viewer would see when spinning).
 - **Strobe rendering.** Draw the wheel into an offscreen canvas, then at each flash time rotate it by the accumulated wheel angle. Optional persistence/decay between flashes to mimic an eye or camera exposure.
-- **Starting moves** (agreed): solid circle (the wide-pen stroke), plain ring of marks, ring of semicircles, stepped ring.
+- **Starting moves** (agreed): solid circle (the wide-pen stroke), plain ring of marks, ring of semicircles, nibbles (bites from a circle's edge), stepped ring.
 
 ## Resolved questions
 

@@ -130,6 +130,10 @@ fieldset.recipe {
   max-width: 1136px;
 }
 
+fieldset.recipe > .history {
+  margin-bottom: 10px;
+}
+
 fieldset.recipe > .note {
   clear: both;
   margin: 0 0 10px;

@@ -176,3 +176,58 @@ test('marks and semicircles can wobble, a solid circle cannot', () => {
   assert.equal(typeof R.createMove('marks').seed, 'number');
   assert.equal(R.setField(R.createMove('circle'), 'wobble', 0.5), false);
 });
+
+test('offset shifts a ring by a fraction of its own spacing', () => {
+  const recipe = R.defaultRecipe();
+  const ring = R.addMove(recipe, 'semicircles'); // 13
+  assert.equal(R.phaseOf(recipe, ring), 0);
+  R.setField(ring, 'offset', 0.5);
+  assert.ok(Math.abs(R.phaseOf(recipe, ring) - Math.PI / 13) < 1e-12);
+  R.setField(ring, 'offset', -0.25); // either way
+  assert.ok(Math.abs(R.phaseOf(recipe, ring) + Math.PI / 26) < 1e-12);
+});
+
+test('an aligned ring starts from the other ring, plus its own offset', () => {
+  const recipe = R.defaultRecipe();
+  const semis = R.addMove(recipe, 'semicircles');
+  const nibbles = R.addMove(recipe, 'nibbles');
+  R.setField(semis, 'offset', 0.2);
+  R.setField(nibbles, 'align', String(semis.id));
+  const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-12, `expected ${b}, got ${a}`);
+  close(R.phaseOf(recipe, nibbles), (0.2 * 2 * Math.PI) / 13);
+  R.setField(nibbles, 'offset', 0.5);
+  close(R.phaseOf(recipe, nibbles), (0.7 * 2 * Math.PI) / 13);
+
+  assert.equal(R.setField(semis, 'align', semis.id), false); // not with itself
+  R.setField(semis, 'align', nibbles.id); // a loop still gives an answer
+  assert.ok(Number.isFinite(R.phaseOf(recipe, nibbles)));
+
+  R.removeMove(recipe, semis.id);
+  assert.equal(nibbles.align, null);
+  close(R.phaseOf(recipe, nibbles), Math.PI / 13);
+});
+
+test('nibbles sit on an edge of their circle, and the circle carries them when resolved', () => {
+  const recipe = R.defaultRecipe();
+  const circle = R.addMove(recipe, 'circle'); // radius 0.9, width 0.08
+  const inner = R.addMove(recipe, 'nibbles');
+  const outer = R.addMove(recipe, 'nibbles');
+  R.setField(inner, 'attach', circle.id);
+  R.setField(inner, 'edge', 'inner');
+  R.setField(outer, 'attach', circle.id);
+  assert.ok(Math.abs(R.effectiveRadius(recipe, inner) - 0.86) < 1e-12);
+  assert.ok(Math.abs(R.effectiveRadius(recipe, outer) - 0.94) < 1e-12);
+
+  const drawn = R.resolve(recipe).moves.find((m) => m.id === circle.id);
+  assert.deepEqual(drawn.nibbles.map((n) => n.id), [inner.id, outer.id]);
+  assert.equal(drawn.nibbles[0].phase, 0);
+  assert.equal(R.countedMoves(recipe).length, 2); // nibbles drift like any ring
+});
+
+test('nibbles cut their circle wherever they are in the recipe', () => {
+  const recipe = R.defaultRecipe();
+  const nib = R.addMove(recipe, 'nibbles');
+  const circle = R.addMove(recipe, 'circle');
+  R.setField(nib, 'attach', circle.id);
+  assert.equal(R.resolve(recipe).moves[1].nibbles.length, 1);
+});

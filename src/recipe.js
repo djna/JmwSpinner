@@ -4,12 +4,27 @@
 (function (root) {
   'use strict';
 
+  const TAU = 2 * Math.PI;
+
   // Each move type: a label, whether it has a mark count (so it drifts under the strobe)
   // and if so a plural noun for that count, its editable fields and their defaults.
   // Number fields have a slider range; a field with `options` is a choice instead, and a
-  // `circleRef` field holds the id of a solid circle in the recipe (or null for none).
+  // `ref` field holds the id of another move (a solid 'circle', or a counted 'ring'), or null.
   const COUNT = { key: 'count', label: 'Count', min: 1, max: 72, step: 1, integer: true };
   const RADIUS = { key: 'radius', label: 'Radius', min: 0.05, max: 0.95, step: 0.01 };
+  const ATTACH = { key: 'attach', label: 'Attach to', ref: 'circle' };
+  const EDGE = {
+    key: 'edge',
+    label: 'Edge',
+    options: [
+      ['inner', 'inner edge'],
+      ['outer', 'outer edge'],
+    ],
+  };
+  // Where a ring's shapes sit around the wheel: from the top, or from another ring's
+  // positions, shifted by `offset` of this ring's own spacing (0.5 is halfway between).
+  const ALIGN = { key: 'align', label: 'Align with', ref: 'ring' };
+  const OFFSET = { key: 'offset', label: 'Offset', min: -0.5, max: 0.5, step: 0.05 };
   // Hand-drawn imperfection for moves drawn shape by shape (see wobbleOf). A solid circle
   // has none: the pen is held still while the wheel turns, so it comes out true.
   const WOBBLE = { key: 'wobble', label: 'Wobble', min: 0, max: 1, step: 0.05 };
@@ -30,9 +45,11 @@
         RADIUS,
         { key: 'length', label: 'Length', min: 0.02, max: 0.3, step: 0.005 },
         { key: 'width', label: 'Pen width', min: 0.005, max: 0.1, step: 0.005 },
+        ALIGN,
+        OFFSET,
         WOBBLE,
       ],
-      defaults: { count: 12, radius: 0.8, length: 0.1, width: 0.03, wobble: 0.3 },
+      defaults: { count: 12, radius: 0.8, length: 0.1, width: 0.03, align: null, offset: 0, wobble: 0.3 },
       wobbly: true,
     },
     semicircles: {
@@ -41,15 +58,8 @@
       counted: true,
       fields: [
         COUNT,
-        { key: 'attach', label: 'Attach to', circleRef: true },
-        {
-          key: 'edge',
-          label: 'Edge',
-          options: [
-            ['inner', 'inner edge'],
-            ['outer', 'outer edge'],
-          ],
-        },
+        ATTACH,
+        EDGE,
         RADIUS,
         { key: 'size', label: 'Size', min: 0.01, max: 0.2, step: 0.005 },
         { key: 'width', label: 'Pen width', min: 0.005, max: 0.1, step: 0.005 },
@@ -61,6 +71,8 @@
             ['out', 'towards the rim'],
           ],
         },
+        ALIGN,
+        OFFSET,
         WOBBLE,
       ],
       defaults: {
@@ -71,7 +83,47 @@
         size: 0.05,
         width: 0.02,
         bulge: 'in',
+        align: null,
+        offset: 0,
         wobble: 0.3,
+      },
+      wobbly: true,
+    },
+    // Bites taken out of a solid circle's stroke, from its inner or outer edge. They draw
+    // nothing themselves: the circle they are attached to is drawn with them cut away.
+    nibbles: {
+      label: 'Ring of nibbles',
+      noun: 'nibbles',
+      counted: true,
+      fields: [
+        COUNT,
+        ATTACH,
+        EDGE,
+        {
+          key: 'shape',
+          label: 'Shape',
+          options: [
+            ['round', 'semicircular'],
+            ['cog', 'cog (square notch)'],
+          ],
+        },
+        { key: 'size', label: 'Width', min: 0.01, max: 0.3, step: 0.005 },
+        { key: 'depth', label: 'Depth', min: 0.005, max: 0.3, step: 0.005 },
+        ALIGN,
+        OFFSET,
+        WOBBLE,
+      ],
+      defaults: {
+        count: 13,
+        attach: null,
+        edge: 'outer',
+        shape: 'round',
+        size: 0.06,
+        depth: 0.04,
+        align: null,
+        offset: 0,
+        wobble: 0.3,
+        radius: 0.9, // only used while not attached to a circle
       },
       wobbly: true,
     },
@@ -93,14 +145,14 @@
   }
 
   // Set one field, keeping it valid: numbers are clamped to at least the field's minimum
-  // (a count is also rounded), a choice must be one of its options, and a circle
-  // reference is an id or null ('' from a form counts as null).
+  // (a count is also rounded), a choice must be one of its options, and a reference is
+  // another move's id or null ('' from a form counts as null).
   function setField(move, key, value) {
     const field = MOVE_TYPES[move.type].fields.find((f) => f.key === key);
     if (!field) return false;
-    if (field.circleRef) {
+    if (field.ref) {
       const id = value === null || value === '' ? null : Number(value);
-      if (id !== null && !Number.isInteger(id)) return false;
+      if (id !== null && (!Number.isInteger(id) || id === move.id)) return false;
       move[key] = id;
       return true;
     }
@@ -112,7 +164,7 @@
     let v = Number(value);
     if (!Number.isFinite(v)) return false;
     if (field.integer) v = Math.round(v);
-    move[key] = Math.max(field.min, v);
+    move[key] = field.key === 'offset' ? v : Math.max(field.min, v); // an offset may go either way
     return true;
   }
 
@@ -169,8 +221,28 @@
     const i = recipe.moves.findIndex((m) => m.id === id);
     if (i < 0) return false;
     recipe.moves.splice(i, 1);
-    for (const m of recipe.moves) if (m.attach === id) m.attach = null;
+    for (const m of recipe.moves) {
+      if (m.attach === id) m.attach = null;
+      if (m.align === id) m.align = null;
+    }
     return true;
+  }
+
+  // The counted ring a move is aligned with, or null if none (or it no longer exists).
+  function alignedRing(recipe, move) {
+    if (move.align == null) return null;
+    return recipe.moves.find((m) => m.id === move.align && MOVE_TYPES[m.type].counted) || null;
+  }
+
+  // The angle (radians, clockwise from the top) of a ring's first shape: its own offset,
+  // added to the phase of the ring it is aligned with. A loop of alignments stops at the
+  // first ring met twice.
+  function phaseOf(recipe, move, seen = new Set()) {
+    const own = ((move.offset || 0) * TAU) / move.count;
+    const target = alignedRing(recipe, move);
+    if (!target || seen.has(move.id)) return own;
+    seen.add(move.id);
+    return own + phaseOf(recipe, target, seen);
   }
 
   // The solid circle a move is attached to, or null if none (or it no longer exists).
@@ -196,9 +268,19 @@
     return false;
   }
 
-  // The recipe as drawn: copies of the moves with attachments worked out into radii.
+  // The recipe as drawn: copies of the moves with attachments and alignments worked out
+  // into radii and phases. Each circle also gets the list of nibble rings that cut it.
   function resolve(recipe) {
-    return { moves: recipe.moves.map((m) => ({ ...m, radius: effectiveRadius(recipe, m) })) };
+    const moves = recipe.moves.map((m) => {
+      const copy = { ...m, radius: effectiveRadius(recipe, m) };
+      if (MOVE_TYPES[m.type].counted) copy.phase = phaseOf(recipe, m);
+      return copy;
+    });
+    for (const circle of moves) {
+      if (circle.type !== 'circle') continue;
+      circle.nibbles = moves.filter((m) => m.type === 'nibbles' && m.attach === circle.id);
+    }
+    return { moves };
   }
 
   // Move a move up (delta -1) or down (+1) the list. Later moves draw over earlier ones.
@@ -248,6 +330,8 @@
     removeMove,
     shiftMove,
     attachedCircle,
+    alignedRing,
+    phaseOf,
     effectiveRadius,
     fieldInactive,
     resolve,
