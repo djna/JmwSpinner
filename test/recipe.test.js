@@ -135,3 +135,11 @@ test('the default solver pair uses attached radii', () => {
   R.setField(semi, 'attach', recipe.moves[1].id);
   assert.deepEqual(R.defaultPair(recipe), [semi.id, recipe.moves[0].id]);
 });
+
+test('a move configured before drawing can be appended', () => {
+  const recipe = R.defaultRecipe();
+  const move = R.createMove('semicircles');
+  R.setField(move, 'count', 9);
+  assert.equal(R.appendMove(recipe, move), move);
+  assert.deepEqual(recipe.moves, [move]);
+});

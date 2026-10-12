@@ -101,7 +101,11 @@
   }
 
   function addMove(recipe, type) {
-    const move = createMove(type);
+    return appendMove(recipe, createMove(type));
+  }
+
+  // Add a move made earlier with createMove (e.g. one configured before drawing).
+  function appendMove(recipe, move) {
     recipe.moves.push(move);
     return move;
   }
@@ -185,6 +189,7 @@
     setField,
     defaultRecipe,
     addMove,
+    appendMove,
     removeMove,
     shiftMove,
     attachedCircle,

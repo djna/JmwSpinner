@@ -72,8 +72,9 @@
   }
 
   // The controls for one field: a label, then a slider and number box kept in sync
-  // (as in bindControl below), or a choice list.
-  function fieldControls(move, field) {
+  // (as in bindControl below), or a choice list. `onChange` runs after the field changes,
+  // and a function that refreshes the controls from the move is added to `syncList`.
+  function fieldControls(move, field, onChange, syncList) {
     const id = `move${move.id}-${field.key}`;
     const label = el('label', { for: id }, field.label);
 
@@ -83,9 +84,9 @@
         select.append(el('option', { value }, text));
       }
       select.addEventListener('change', () => {
-        if (Rc.setField(move, field.key, select.value)) redrawRecipe();
+        if (Rc.setField(move, field.key, select.value)) onChange();
       });
-      syncs.push(() => {
+      syncList.push(() => {
         select.value = move[field.key] ?? '';
         markInactive(move, field, label, [select]);
       });
@@ -103,12 +104,12 @@
       markInactive(move, field, label, [range, box]);
     };
     const set = (value) => {
-      if (Rc.setField(move, field.key, value)) redrawRecipe();
+      if (Rc.setField(move, field.key, value)) onChange();
       show();
     };
     range.addEventListener('input', () => set(range.value));
     box.addEventListener('change', () => set(box.value));
-    syncs.push(show);
+    syncList.push(show);
     return [label, range, box];
   }
 
@@ -134,10 +135,16 @@
     }
     card.append(head);
 
-    const fields = el('div', { class: 'move-fields' });
-    for (const field of Rc.MOVE_TYPES[move.type].fields) fields.append(...fieldControls(move, field));
-    card.append(fields);
+    card.append(fieldsGrid(move, redrawRecipe, syncs));
     return card;
+  }
+
+  function fieldsGrid(move, onChange, syncList) {
+    const fields = el('div', { class: 'move-fields' });
+    for (const field of Rc.MOVE_TYPES[move.type].fields) {
+      fields.append(...fieldControls(move, field, onChange, syncList));
+    }
+    return fields;
   }
 
   // Rebuild the move cards after a move is added, removed or reordered.
@@ -149,17 +156,45 @@
   function renderCards() {
     syncs = [];
     movesList.replaceChildren(...recipe.moves.map(moveCard));
+    renderDraft();
   }
 
-  const newMoveType = document.getElementById('new-move-type');
-  for (const [type, spec] of Object.entries(Rc.MOVE_TYPES)) {
-    newMoveType.append(el('option', { value: type }, spec.label));
+  // --- The next move: chosen and configured here, then drawn onto the wheel.
+
+  const draftCard = document.getElementById('new-move');
+  let draft = Rc.createMove('circle');
+  let draftSyncs = [];
+
+  function syncDraft() {
+    for (const sync of draftSyncs) sync();
   }
-  document.getElementById('add-move').addEventListener('click', () => {
-    const move = Rc.addMove(recipe, newMoveType.value);
-    if (move.type === 'circle') startDrawing(move);
-    recipeChanged();
-  });
+
+  function renderDraft() {
+    if (!Rc.attachedCircle(recipe, draft)) Rc.setField(draft, 'attach', null); // its circle was removed
+    draftSyncs = [];
+
+    const head = el('div', { class: 'move-head' });
+    const typeLabel = el('label', { for: 'new-move-type', class: 'move-name' }, 'New move');
+    const type = el('select', { id: 'new-move-type' });
+    for (const [value, spec] of Object.entries(Rc.MOVE_TYPES)) type.append(el('option', { value }, spec.label));
+    type.value = draft.type;
+    type.addEventListener('change', () => {
+      draft = Rc.createMove(type.value);
+      renderDraft();
+    });
+    head.append(typeLabel, type);
+
+    const drawButton = el('button', { type: 'button', id: 'draw-move', class: 'draw' }, 'Draw');
+    drawButton.addEventListener('click', () => {
+      const move = Rc.appendMove(recipe, draft);
+      draft = Rc.createMove(move.type);
+      if (move.type === 'circle') startDrawing(move);
+      recipeChanged();
+    });
+
+    draftCard.replaceChildren(head, fieldsGrid(draft, syncDraft, draftSyncs), drawButton);
+    syncDraft();
+  }
 
   // --- Layers. `marks` holds the recipe in the wheel's frame; `ink` accumulates strobe flashes.
 
@@ -212,7 +247,7 @@
 
   // --- Drawing a circle: the wheel makes one slow turn under the pen.
 
-  const DRAW_SECONDS = 2.5;
+  const DRAW_SECONDS = 6;
   let drawing = null; // { id, start, progress } while a circle is being drawn
 
   function startDrawing(move) {

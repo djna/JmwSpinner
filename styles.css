@@ -175,10 +175,23 @@ fieldset.recipe > .note {
   align-items: center;
 }
 
-.recipe .buttons {
-  align-items: center;
-}
-
 label.inactive {
   color: var(--muted);
+}
+
+/* The next move, configured before it is drawn. */
+
+.move.draft {
+  max-width: 360px;
+  border: 1px dashed var(--muted);
+}
+
+.draft .move-head select {
+  flex: 0 1 auto;
+}
+
+.draft button.draw {
+  margin-top: 10px;
+  padding: 6px 20px;
+  font-weight: 600;
 }
