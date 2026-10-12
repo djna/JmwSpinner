@@ -10,6 +10,15 @@ The open questions have been answered (see "Resolved questions" at the bottom). 
 
 Simple trunk model: `main` is the trunk, with short-lived branches for specific issues and features, merged back into `main`.
 
+## Roadmap (agreed order of slices)
+
+1. **First slice** (done, `feature/first-slice`): one ring of marks, wheel and strobe views, spin/strobe/afterglow controls, strobe maths readout.
+2. **Second ring and strobe solver** (`feature/second-ring`): two rings, and solving the strobe rate (keeping spin) or the spin rate (keeping strobe) for equal and opposite drift, with the skip counts `m1`, `m2` adjustable.
+3. **More moves and an editable recipe**: solid circle, ring of semicircles; add, remove and reorder moves.
+4. **Stepped ring**: out-only and loop-back, with the spiral-direction indicator.
+5. **Snapping and ghost guides.**
+6. **Later**: guided step-by-step recipe, then freehand strokes.
+
 ## Goal
 
 A JavaScript emulation of the hand-drawn "spin art" animations by LimbaTrip (Yohei Kisanuki), in the phenakistoscope family. The emulation should use the computer to lower the skill needed for the incremental drawing process the artist uses.
