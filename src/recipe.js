@@ -204,6 +204,61 @@
       },
       wobbly: true,
     },
+    // Triangular wings, base on an anchor and point outward. The first (at the top) points
+    // straight out; each next one round the ring leans a further `spins` × 360°/count, by
+    // default against the ring's direction (with 12, the one at 1 o'clock leans 30° left),
+    // so under the strobe each wing seems to spin. Anchored to a ring, the wings sit at the
+    // top of that ring's shapes and take its count and positions.
+    wings: {
+      label: 'Ring of wings',
+      noun: 'wings',
+      counted: true,
+      fields: [
+        { key: 'anchor', label: 'Anchor to', ref: 'ring' },
+        { key: 'gap', label: 'Gap', min: 0, max: 0.2, step: 0.005 },
+        COUNT,
+        RADIUS,
+        { key: 'length', label: 'Length', min: 0.01, max: 0.4, step: 0.005 },
+        { key: 'base', label: 'Base width', min: 0.005, max: 0.2, step: 0.005 },
+        {
+          key: 'lean',
+          label: 'Lean',
+          options: [
+            ['against', 'against the ring (1 o’clock leans left)'],
+            ['with', 'with the ring (1 o’clock leans right)'],
+          ],
+        },
+        { key: 'spins', label: 'Spins', min: 0, max: 6, step: 1, integer: true },
+        {
+          key: 'fill',
+          label: 'Fill',
+          options: [
+            ['solid', 'filled'],
+            ['outline', 'outline'],
+          ],
+        },
+        { key: 'width', label: 'Pen width', min: 0.005, max: 0.1, step: 0.005 },
+        ALIGN,
+        OFFSET,
+        WOBBLE,
+      ],
+      defaults: {
+        anchor: null,
+        gap: 0,
+        count: 12,
+        radius: 0.6,
+        length: 0.12,
+        base: 0.05,
+        lean: 'against',
+        spins: 1,
+        fill: 'solid',
+        width: 0.015,
+        align: null,
+        offset: 0,
+        wobble: 0.2,
+      },
+      wobbly: true,
+    },
   };
 
   let nextId = 1;
@@ -322,6 +377,7 @@
       if (m.attach === id) m.attach = null;
       if (m.align === id) m.align = null;
       if (m.from === id) m.from = null;
+      if (m.anchor === id) m.anchor = null;
     }
     return true;
   }
@@ -336,6 +392,11 @@
   // added to the phase of the ring it is aligned with. A loop of alignments stops at the
   // first ring met twice.
   function phaseOf(recipe, move, seen = new Set()) {
+    const anchor = anchorRing(recipe, move);
+    if (anchor && !seen.has(move.id)) {
+      seen.add(move.id);
+      return phaseOf(recipe, anchor, seen); // anchored wings sit exactly on their anchor's shapes
+    }
     const own = ((move.offset || 0) * TAU) / move.count;
     const target = alignedRing(recipe, move);
     if (!target || seen.has(move.id)) return own;
@@ -352,6 +413,7 @@
   // The radius a move is actually drawn at. An attached move sits with its flat side on
   // the inner or outer edge of its circle's pen stroke, so it follows that circle.
   function effectiveRadius(recipe, move) {
+    if (move.type === 'wings') return wingsRadius(recipe, move);
     if (move.type === 'stepped') return (steppedInner(recipe, move) + move.outer) / 2; // its middle, for sorting
     const circle = attachedCircle(recipe, move);
     if (!circle) return move.radius;
@@ -365,8 +427,31 @@
     return recipe.moves.find((m) => m.id === move.from && MOVE_TYPES[m.type].counted) || null;
   }
 
+  // The ring a ring of wings is anchored to, or null if none (or it no longer exists).
+  function anchorRing(recipe, move) {
+    if (move.type !== 'wings' || move.anchor == null) return null;
+    return recipe.moves.find((m) => m.id === move.anchor && m.id !== move.id && MOVE_TYPES[m.type].counted) || null;
+  }
+
+  // Anchored wings take their anchor's count. Called before each redraw, so everything
+  // that reads `count` (drift, solver, readout) sees the anchored value.
+  function syncAnchors(recipe) {
+    for (let pass = 0; pass < recipe.moves.length; pass++) {
+      let changed = false;
+      for (const move of recipe.moves) {
+        const anchor = anchorRing(recipe, move);
+        if (anchor && move.count !== anchor.count) {
+          move.count = anchor.count;
+          changed = true;
+        }
+      }
+      if (!changed) break; // chains of wings on wings settle in a few passes
+    }
+  }
+
   // How far out a ring's shapes reach from the centre.
   function ringReach(recipe, move, seen = new Set()) {
+    if (move.type === 'wings') return wingsRadius(recipe, move, seen) + move.length;
     const r = effectiveRadius(recipe, move);
     if (move.type === 'marks') return r + move.length / 2;
     if (move.type === 'semicircles') return r + (move.bulge === 'out' ? move.size : 0);
@@ -374,6 +459,15 @@
       return Math.max(steppedInner(recipe, move, seen), move.outer) + move.size;
     }
     return r; // nibbles: the circle's edge
+  }
+
+  // Where a ring of wings has its bases: its own radius, or `gap` beyond the reach of its
+  // anchor ring (the top of each semicircle). A loop of anchors stops at the first met twice.
+  function wingsRadius(recipe, move, seen = new Set()) {
+    const anchor = anchorRing(recipe, move);
+    if (!anchor || seen.has(move.id)) return move.radius;
+    seen.add(move.id);
+    return ringReach(recipe, anchor, seen) + move.gap;
   }
 
   // A stepped ring's inner radius: its own, or `gap` beyond the reach of the ring it starts
@@ -396,6 +490,13 @@
 
   // Whether a field has no effect for this move as it stands, so the form can grey it out.
   function fieldInactive(recipe, move, key) {
+    if (move.type === 'wings') {
+      const anchored = anchorRing(recipe, move) !== null;
+      if (['count', 'radius', 'align', 'offset'].includes(key)) return anchored;
+      if (key === 'gap') return !anchored;
+      if (key === 'width') return move.fill === 'solid';
+      return false;
+    }
     const attached = attachedCircle(recipe, move) !== null;
     if (key === 'radius') return attached;
     if (key === 'edge') return !attached;
@@ -461,6 +562,8 @@
     const moves = recipe.moves.map((m) => {
       const copy = { ...m, radius: effectiveRadius(recipe, m) };
       if (m.type === 'stepped') copy.inner = steppedInner(recipe, m);
+      const anchor = anchorRing(recipe, m);
+      if (anchor) copy.anchorWobble = { seed: anchor.seed, wobble: anchor.wobble }; // follow its shapes
       if (MOVE_TYPES[m.type].counted) copy.phase = phaseOf(recipe, m);
       return copy;
     });
@@ -484,6 +587,21 @@
   // Moves with a mark count: the ones that drift under the strobe.
   function countedMoves(recipe) {
     return recipe.moves.filter((m) => MOVE_TYPES[m.type].counted);
+  }
+
+  // How much each wing seems to turn per flash, in radians (clockwise positive): at each
+  // position the wing `skip` places back takes over, leaning `lean step` differently, while
+  // the ring drifts. Leaning against the ring, one spin, it turns about one step a flash.
+  function wingSpin(move, step) {
+    const a = TAU / move.count;
+    const skip = Math.round(step / a);
+    const d = step - a * skip;
+    return d - skip * leanStep(move);
+  }
+
+  // The extra lean of each wing over the one before it, in radians (clockwise positive).
+  function leanStep(move) {
+    return (move.lean === 'with' ? 1 : -1) * move.spins * (TAU / move.count);
   }
 
   // The pair of counted moves the solver uses by default: outermost and innermost.
@@ -529,6 +647,11 @@
     fieldInactive,
     steppedRadii,
     spiralReading,
+    anchorRing,
+    syncAnchors,
+    wingsRadius,
+    leanStep,
+    wingSpin,
     resolve,
     wobbleOf,
     rewobble,

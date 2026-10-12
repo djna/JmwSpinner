@@ -365,3 +365,70 @@ test('loading moves with high ids keeps new ids above them', () => {
   assert.equal(loaded[0].count, 12); // defaults fill in
   assert.ok(R.createMove('marks').id > 5000);
 });
+
+// A circle with 14 outward semicircles on its outer edge, and wings anchored to them.
+function wingsOnSemicircles() {
+  const recipe = R.defaultRecipe();
+  const circle = R.addMove(recipe, 'circle');
+  R.setField(circle, 'radius', 0.4);
+  R.setField(circle, 'width', 0.08); // outer edge 0.44
+  const semis = R.addMove(recipe, 'semicircles');
+  R.setField(semis, 'attach', circle.id);
+  R.setField(semis, 'edge', 'outer');
+  R.setField(semis, 'bulge', 'out'); // tops at 0.44 + 0.05
+  R.setField(semis, 'count', 14);
+  const wings = R.addMove(recipe, 'wings');
+  R.setField(wings, 'anchor', semis.id);
+  return { recipe, circle, semis, wings };
+}
+
+test('anchored wings sit on the tops of their ring and take its count and phase', () => {
+  const { recipe, semis, wings } = wingsOnSemicircles();
+  const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `expected ${b}, got ${a}`);
+  close(R.wingsRadius(recipe, wings), 0.49);
+  R.setField(wings, 'gap', 0.01);
+  close(R.effectiveRadius(recipe, wings), 0.5);
+
+  R.syncAnchors(recipe);
+  assert.equal(wings.count, 14);
+  R.setField(semis, 'count', 9);
+  R.syncAnchors(recipe);
+  assert.equal(wings.count, 9);
+
+  R.setField(semis, 'offset', 0.5);
+  close(R.phaseOf(recipe, wings), R.phaseOf(recipe, semis));
+  for (const key of ['count', 'radius', 'align', 'offset']) assert.equal(R.fieldInactive(recipe, wings, key), true);
+  assert.equal(R.fieldInactive(recipe, wings, 'gap'), false);
+  assert.equal(R.fieldInactive(recipe, wings, 'width'), true); // filled
+
+  const drawn = R.resolve(recipe).moves.find((m) => m.id === wings.id);
+  assert.equal(drawn.anchorWobble.seed, semis.seed);
+  close(drawn.radius, 0.5);
+
+  R.removeMove(recipe, semis.id);
+  assert.equal(wings.anchor, null);
+  assert.equal(R.fieldInactive(recipe, wings, 'radius'), false);
+});
+
+test('wings lean a further 360/N each, against the ring by default', () => {
+  const wings = R.createMove('wings', { count: 12 });
+  const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `expected ${b}, got ${a}`);
+  close(R.leanStep(wings), -Math.PI / 6); // 1 o'clock leans 30° left (anticlockwise)
+  R.setField(wings, 'lean', 'with');
+  close(R.leanStep(wings), Math.PI / 6);
+  R.setField(wings, 'spins', 2);
+  close(R.leanStep(wings), Math.PI / 3);
+  R.setField(wings, 'spins', 0);
+  close(R.leanStep(wings), 0);
+});
+
+test('under the strobe a wing seems to turn by the drift less the lean of the skipped wings', () => {
+  const wings = R.createMove('wings', { count: 12 });
+  const a = Math.PI / 6;
+  const close = (x, y) => assert.ok(Math.abs(x - y) < 1e-9, `expected ${y}, got ${x}`);
+  close(R.wingSpin(wings, a + 0.02), a + 0.02); // leaning against: turns a whole step a flash
+  R.setField(wings, 'lean', 'with');
+  close(R.wingSpin(wings, a + 0.02), 0.02 - a); // leaning with: turns back nearly a spacing
+  R.setField(wings, 'spins', 0);
+  close(R.wingSpin(wings, a + 0.02), 0.02); // no lean: only the drift
+});
