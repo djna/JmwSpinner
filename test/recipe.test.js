@@ -314,3 +314,15 @@ test('trail and offset may be negative; a ring cannot start beyond itself', () =
   assert.equal(move.trail, -0.4);
   assert.equal(R.setField(move, 'from', move.id), false);
 });
+
+test('flight length is one sequence step per flash per skipped spacing', () => {
+  const a = (2 * Math.PI) / 13;
+  const out = R.createMove('stepped', { count: 13, turns: 3, pattern: 'out' });
+  assert.equal(R.spiralReading(out, a).flashes, 38); // 39 shapes, 38 steps out
+  assert.equal(R.spiralReading(out, 2 * a).flashes, 19);
+  const loop = R.createMove('stepped', { count: 13, turns: 2, pattern: 'loop' });
+  assert.equal(R.spiralReading(loop, a).flashes, 13); // half of 26 each way
+  assert.equal(R.spiralReading(out, 0.01).flashes, Infinity);
+  R.setField(out, 'turns', 24);
+  assert.equal(out.turns, 24);
+});

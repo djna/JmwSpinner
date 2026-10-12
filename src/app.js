@@ -316,13 +316,26 @@
     still: 'shows <b>no in or out motion</b>, because the wheel skips no whole spacings between flashes',
   };
 
+  // How long a shape takes to travel between the inner and outer radius, and how far round
+  // the wheel it drifts meanwhile: one step along the sequence per flash, so a longer
+  // flight needs more shapes (more turns) or more drift per flash.
+  function describeFlight(move, s, flashes) {
+    const d = deg(M.apparentStep(s, move.count));
+    const sweep = Math.abs(d * flashes);
+    const way = Math.abs(d) < 1e-9 ? '' : d > 0 ? ' clockwise' : ' anticlockwise';
+    const leg = move.pattern === 'out' ? 'to travel between the inner and outer radius' : 'to travel each way';
+    return `Each shape takes <b>${fmt(flashes / params.strobe)} s</b> (${fmt(flashes, 0)} flashes) ${leg},
+      drifting <b>${fmt(sweep, 0)}°</b>${way} on the way. For a longer flight, add turns or drift faster.`;
+  }
+
   // How a stepped ring reads in or out at this strobe setting, and whether it will hold up.
   function describeSpiral(move, s) {
     const drawn = Rc.resolve(recipe).moves.find((m) => m.id === move.id); // inner radius worked out
-    const { reading, skip, strain } = Rc.spiralReading(drawn, s);
+    const { reading, skip, strain, flashes } = Rc.spiralReading(drawn, s);
     const shapes = move.count * move.turns;
     const why = reading === 'still' ? '' : ` (the wheel skips ${Math.abs(skip)} spacing${Math.abs(skip) === 1 ? '' : 's'} per flash)`;
     let text = ` With its ${shapes} shapes it ${SPIRAL_READINGS[reading]}${why}.`;
+    if (reading !== 'still') text += ` ${describeFlight(move, s, flashes)}`;
     if (reading === 'in' || reading === 'out') {
       text += ` Switch <i>Climbs</i> to make it spiral ${reading === 'in' ? 'outward' : 'inward'}.`;
     }

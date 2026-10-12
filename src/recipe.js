@@ -136,7 +136,7 @@
       counted: true,
       fields: [
         COUNT,
-        { key: 'turns', label: 'Turns', min: 1, max: 4, step: 1, integer: true },
+        { key: 'turns', label: 'Turns', min: 1, max: 24, step: 1, integer: true },
         {
           key: 'pattern',
           label: 'Pattern',
@@ -410,7 +410,9 @@
   // anticlockwise). Returns 'in' or 'out' (a spiral), 'breathes' (out and back: half the
   // ring moves out and half in) or 'still' (no whole spacings skipped: no radial motion),
   // plus `strain`: how far the radius moves per flash compared with the gap between
-  // neighbouring shapes. Near 1 the eye may match a neighbour instead.
+  // neighbouring shapes (near 1 the eye may match a neighbour instead), and `flashes`:
+  // how many flashes a shape takes to travel from the inner radius to the outer one, at
+  // one step along the sequence per skipped spacing.
   function spiralReading(move, step) {
     const a = TAU / move.count;
     const skip = Math.round(step / a);
@@ -418,10 +420,12 @@
     const rise = radii.length > 1 ? Math.abs(radii[1] - radii[0]) : 0;
     const gap = Math.max(1e-9, Math.min(move.inner, move.outer) * a);
     const strain = (Math.abs(skip) * rise) / gap;
-    if (skip === 0 || rise === 0) return { reading: 'still', skip, strain };
-    if (move.pattern === 'loop') return { reading: 'breathes', skip, strain };
+    const outSteps = move.pattern === 'out' ? radii.length - 1 : radii.length / 2;
+    const flashes = skip === 0 ? Infinity : outSteps / Math.abs(skip);
+    if (skip === 0 || rise === 0) return { reading: 'still', skip, strain, flashes };
+    if (move.pattern === 'loop') return { reading: 'breathes', skip, strain, flashes };
     const inward = skip * (move.climb === 'cw' ? 1 : -1) > 0;
-    return { reading: inward ? 'in' : 'out', skip, strain };
+    return { reading: inward ? 'in' : 'out', skip, strain, flashes };
   }
 
   // The recipe as drawn: copies of the moves with attachments and alignments worked out
