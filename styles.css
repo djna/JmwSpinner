@@ -24,16 +24,60 @@ header p {
   color: var(--muted);
 }
 
-.views {
-  display: flex;
-  flex-wrap: wrap;
+/* Top row: the next move, the two views, then the strobe controls, solver and readout.
+   Narrower windows put the views first and stack the rest under them. */
+.top {
+  display: grid;
+  grid-template-columns: minmax(250px, 300px) minmax(0, 1fr) minmax(0, 1fr) minmax(290px, 350px);
   gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 1150px) {
+  .top {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .top .wheel {
+    order: -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .top {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 figure {
-  flex: 1 1 320px;
-  max-width: 560px;
   margin: 0;
+}
+
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.side fieldset {
+  grid-template-columns: auto minmax(70px, 1fr) 4.5em;
+}
+
+/* The solver, shown when opened. */
+details.solver {
+  background: var(--panel);
+  border-radius: 8px;
+}
+
+details.solver summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 10px 14px;
+}
+
+details.solver fieldset {
+  padding-top: 0;
 }
 
 canvas {
@@ -105,8 +149,6 @@ fieldset > button,
 }
 
 #readout {
-  flex: 1 1 280px;
-  max-width: 560px;
   line-height: 1.5;
 }
 
@@ -127,7 +169,6 @@ select.wide {
 fieldset.recipe {
   display: block;
   flex: 1 1 100%;
-  max-width: 1136px;
 }
 
 fieldset.recipe > .history {
@@ -186,8 +227,12 @@ label.inactive {
 /* The next move, configured before it is drawn. */
 
 .move.draft {
-  max-width: 360px;
+  background: var(--panel);
   border: 1px dashed var(--muted);
+}
+
+.draft .move-fields {
+  grid-template-columns: auto minmax(60px, 1fr) 4.5em;
 }
 
 .draft .move-head select {
