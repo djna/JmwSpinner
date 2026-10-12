@@ -78,11 +78,11 @@
       defaults: {
         count: 13,
         attach: null,
-        edge: 'inner',
+        edge: 'outer',
         radius: 0.6,
         size: 0.05,
         width: 0.02,
-        bulge: 'in',
+        bulge: 'out',
         align: null,
         offset: 0,
         wobble: 0.3,

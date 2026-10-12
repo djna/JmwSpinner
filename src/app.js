@@ -194,8 +194,9 @@
       }
       Rc.syncAnchors({ moves: [...recipe.moves, draft] });
     }
-    if (draft.type === 'nibbles' && draft.attach === null) {
-      // Nibbles only show in a circle, so start them on the most recent one.
+    if ((draft.type === 'nibbles' || draft.type === 'semicircles') && draft.attach === null) {
+      // Nibbles only show in a circle, and semicircles usually sit on one, so start them on
+      // the most recent circle.
       const circles = recipe.moves.filter((m) => m.type === 'circle');
       if (circles.length) Rc.setField(draft, 'attach', circles[circles.length - 1].id);
     }

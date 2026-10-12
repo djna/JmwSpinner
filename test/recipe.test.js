@@ -105,6 +105,8 @@ test('an attached semicircle ring sits on the inner or outer edge of its circle'
 
   R.setField(semi, 'attach', String(circle.id)); // as a form would send it
   assert.equal(semi.attach, circle.id);
+  close(R.effectiveRadius(recipe, semi), 0.85); // outer edge by default
+  R.setField(semi, 'edge', 'inner');
   close(R.effectiveRadius(recipe, semi), 0.75);
   R.setField(semi, 'edge', 'outer');
   close(R.effectiveRadius(recipe, semi), 0.85);
@@ -354,7 +356,7 @@ test('saved moves load back with their ids, seeds, fields and links', () => {
   assert.equal(loaded[1].count, 14);
   assert.equal(loaded[1].attach, circle.id);
   assert.equal(loaded[1].seed, semis.seed);
-  assert.equal(loaded[1].bulge, 'in');
+  assert.equal(loaded[1].bulge, 'out'); // the default
   assert.ok(!('unknown' in loaded[1]));
   assert.ok(R.createMove('marks').id > semis.id); // new ids don't clash
   assert.throws(() => R.movesFromSaved({}), /No list of moves/);
