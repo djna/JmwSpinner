@@ -87,3 +87,47 @@ test('a chosen pair is kept while valid, and falls back to the default otherwise
   R.removeMove(recipe, s);
   assert.deepEqual(R.resolvePair(recipe, [s, a]), [a, b]);
 });
+
+test('an attached semicircle ring sits on the inner or outer edge of its circle', () => {
+  const recipe = R.defaultRecipe();
+  const circle = R.addMove(recipe, 'circle');
+  R.setField(circle, 'radius', 0.8);
+  R.setField(circle, 'width', 0.1);
+  const semi = R.addMove(recipe, 'semicircles');
+  const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `expected ${b}, got ${a}`);
+
+  close(R.effectiveRadius(recipe, semi), semi.radius); // not attached yet
+  assert.equal(R.fieldInactive(recipe, semi, 'edge'), true);
+
+  R.setField(semi, 'attach', String(circle.id)); // as a form would send it
+  assert.equal(semi.attach, circle.id);
+  close(R.effectiveRadius(recipe, semi), 0.75);
+  R.setField(semi, 'edge', 'outer');
+  close(R.effectiveRadius(recipe, semi), 0.85);
+  assert.equal(R.fieldInactive(recipe, semi, 'radius'), true);
+
+  R.setField(circle, 'radius', 0.5); // follows the circle
+  close(R.resolve(recipe).moves.find((m) => m.id === semi.id).radius, 0.55);
+  assert.equal(semi.radius, 0.6); // its own radius is kept for when it is detached
+});
+
+test('removing a circle detaches the moves attached to it', () => {
+  const recipe = R.defaultRecipe();
+  const circle = R.addMove(recipe, 'circle');
+  const semi = R.addMove(recipe, 'semicircles');
+  R.setField(semi, 'attach', circle.id);
+  R.removeMove(recipe, circle.id);
+  assert.equal(semi.attach, null);
+  assert.equal(R.effectiveRadius(recipe, semi), semi.radius);
+  R.setField(semi, 'attach', '');
+  assert.equal(semi.attach, null);
+});
+
+test('the default solver pair uses attached radii', () => {
+  const recipe = { moves: [R.createMove('marks', { radius: 0.7 }), R.createMove('circle', { radius: 0.9 })] };
+  const semi = R.createMove('semicircles', { radius: 0.2 });
+  recipe.moves.push(semi);
+  assert.deepEqual(R.defaultPair(recipe), [recipe.moves[0].id, semi.id]);
+  R.setField(semi, 'attach', recipe.moves[1].id);
+  assert.deepEqual(R.defaultPair(recipe), [semi.id, recipe.moves[0].id]);
+});

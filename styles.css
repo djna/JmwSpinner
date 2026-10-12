@@ -178,3 +178,7 @@ fieldset.recipe > .note {
 .recipe .buttons {
   align-items: center;
 }
+
+label.inactive {
+  color: var(--muted);
+}

@@ -44,6 +44,7 @@
   let pairChosen = false; // until the user picks, the pair follows the outermost and innermost
 
   const movesList = document.getElementById('moves');
+  let syncs = []; // one per field control: refreshes it from the recipe after any change
 
   function el(tag, attrs = {}, text = '') {
     const node = document.createElement(tag);
@@ -56,18 +57,37 @@
     return `${recipe.moves.indexOf(move) + 1}. ${Rc.MOVE_TYPES[move.type].label}`;
   }
 
+  // The choices for a circle reference: none, or any solid circle in the recipe.
+  function circleOptions() {
+    const options = [['', 'nothing (own radius)']];
+    for (const m of recipe.moves) if (m.type === 'circle') options.push([m.id, moveName(m)]);
+    return options;
+  }
+
+  // Grey out a field's controls when it has no effect (e.g. radius on an attached ring).
+  function markInactive(move, field, label, inputs) {
+    const inactive = Rc.fieldInactive(recipe, move, field.key);
+    label.classList.toggle('inactive', inactive);
+    for (const input of inputs) input.disabled = inactive;
+  }
+
   // The controls for one field: a label, then a slider and number box kept in sync
   // (as in bindControl below), or a choice list.
   function fieldControls(move, field) {
     const id = `move${move.id}-${field.key}`;
     const label = el('label', { for: id }, field.label);
 
-    if (field.options) {
+    if (field.options || field.circleRef) {
       const select = el('select', { id, class: 'wide' });
-      for (const [value, text] of field.options) select.append(el('option', { value }, text));
-      select.value = move[field.key];
+      for (const [value, text] of field.options || circleOptions()) {
+        select.append(el('option', { value }, text));
+      }
       select.addEventListener('change', () => {
         if (Rc.setField(move, field.key, select.value)) redrawRecipe();
+      });
+      syncs.push(() => {
+        select.value = move[field.key] ?? '';
+        markInactive(move, field, label, [select]);
       });
       return [label, select];
     }
@@ -75,9 +95,12 @@
     const range = el('input', { type: 'range', id, min: field.min, max: field.max, step: field.step });
     const box = el('input', { type: 'number', min: field.min, step: field.integer ? 1 : 'any' });
     box.setAttribute('aria-label', field.label);
+    // Radius shows where the move is actually drawn, which follows an attached circle.
+    const shown = () => (field.key === 'radius' ? Rc.effectiveRadius(recipe, move) : move[field.key]);
     const show = () => {
-      range.value = move[field.key];
-      box.value = Number(move[field.key].toFixed(4));
+      range.value = shown();
+      box.value = Number(shown().toFixed(4));
+      markInactive(move, field, label, [range, box]);
     };
     const set = (value) => {
       if (Rc.setField(move, field.key, value)) redrawRecipe();
@@ -85,7 +108,7 @@
     };
     range.addEventListener('input', () => set(range.value));
     box.addEventListener('change', () => set(box.value));
-    show();
+    syncs.push(show);
     return [label, range, box];
   }
 
@@ -118,8 +141,13 @@
 
   // Rebuild the move cards after a move is added, removed or reordered.
   function recipeChanged() {
-    movesList.replaceChildren(...recipe.moves.map(moveCard));
+    renderCards();
     redrawRecipe();
+  }
+
+  function renderCards() {
+    syncs = [];
+    movesList.replaceChildren(...recipe.moves.map(moveCard));
   }
 
   const newMoveType = document.getElementById('new-move-type');
@@ -148,14 +176,16 @@
   }
 
   function redrawRecipe() {
+    const drawn = Rc.resolve(recipe);
     const marksCtx = marks.getContext('2d');
     marksCtx.clearRect(0, 0, size, size);
-    R.drawRecipe(marksCtx, size, recipe);
+    R.drawRecipe(marksCtx, size, drawn);
 
     const wsize = wheelCanvas.width;
     wheelCtx.clearRect(0, 0, wsize, wsize);
     R.drawBoard(wheelCtx, wsize);
-    R.drawRecipe(wheelCtx, wsize, recipe); // fresh draw so it is crisp at this canvas's size
+    R.drawRecipe(wheelCtx, wsize, drawn); // fresh draw so it is crisp at this canvas's size
+    for (const sync of syncs) sync();
     updatePairChoice();
     updateReadout();
   }
@@ -313,7 +343,7 @@
 
   window.addEventListener('resize', rebuildLayers);
 
-  movesList.replaceChildren(...recipe.moves.map(moveCard));
+  renderCards();
   rebuildLayers();
   requestAnimationFrame(frame);
 })();

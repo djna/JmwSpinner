@@ -6,7 +6,8 @@
 
   // Each move type: a label, whether it has a mark count (so it drifts under the strobe)
   // and if so a plural noun for that count, its editable fields and their defaults.
-  // Number fields have a slider range; a field with `options` is a choice instead.
+  // Number fields have a slider range; a field with `options` is a choice instead, and a
+  // `circleRef` field holds the id of a solid circle in the recipe (or null for none).
   const COUNT = { key: 'count', label: 'Count', min: 1, max: 72, step: 1, integer: true };
   const RADIUS = { key: 'radius', label: 'Radius', min: 0.05, max: 0.95, step: 0.01 };
 
@@ -35,6 +36,15 @@
       counted: true,
       fields: [
         COUNT,
+        { key: 'attach', label: 'Attach to', circleRef: true },
+        {
+          key: 'edge',
+          label: 'Edge',
+          options: [
+            ['inner', 'inner edge'],
+            ['outer', 'outer edge'],
+          ],
+        },
         RADIUS,
         { key: 'size', label: 'Size', min: 0.01, max: 0.2, step: 0.005 },
         { key: 'width', label: 'Pen width', min: 0.005, max: 0.1, step: 0.005 },
@@ -47,7 +57,7 @@
           ],
         },
       ],
-      defaults: { count: 13, radius: 0.6, size: 0.05, width: 0.02, bulge: 'in' },
+      defaults: { count: 13, attach: null, edge: 'inner', radius: 0.6, size: 0.05, width: 0.02, bulge: 'in' },
     },
   };
 
@@ -62,10 +72,17 @@
   }
 
   // Set one field, keeping it valid: numbers are clamped to at least the field's minimum
-  // (a count is also rounded), and a choice must be one of its options.
+  // (a count is also rounded), a choice must be one of its options, and a circle
+  // reference is an id or null ('' from a form counts as null).
   function setField(move, key, value) {
     const field = MOVE_TYPES[move.type].fields.find((f) => f.key === key);
     if (!field) return false;
+    if (field.circleRef) {
+      const id = value === null || value === '' ? null : Number(value);
+      if (id !== null && !Number.isInteger(id)) return false;
+      move[key] = id;
+      return true;
+    }
     if (field.options) {
       if (!field.options.some(([v]) => v === value)) return false;
       move[key] = value;
@@ -98,7 +115,36 @@
     const i = recipe.moves.findIndex((m) => m.id === id);
     if (i < 0) return false;
     recipe.moves.splice(i, 1);
+    for (const m of recipe.moves) if (m.attach === id) m.attach = null;
     return true;
+  }
+
+  // The solid circle a move is attached to, or null if none (or it no longer exists).
+  function attachedCircle(recipe, move) {
+    if (move.attach == null) return null;
+    return recipe.moves.find((m) => m.id === move.attach && m.type === 'circle') || null;
+  }
+
+  // The radius a move is actually drawn at. An attached move sits with its flat side on
+  // the inner or outer edge of its circle's pen stroke, so it follows that circle.
+  function effectiveRadius(recipe, move) {
+    const circle = attachedCircle(recipe, move);
+    if (!circle) return move.radius;
+    const half = circle.width / 2;
+    return move.edge === 'outer' ? circle.radius + half : Math.max(0, circle.radius - half);
+  }
+
+  // Whether a field has no effect for this move as it stands, so the form can grey it out.
+  function fieldInactive(recipe, move, key) {
+    const attached = attachedCircle(recipe, move) !== null;
+    if (key === 'radius') return attached;
+    if (key === 'edge') return !attached;
+    return false;
+  }
+
+  // The recipe as drawn: copies of the moves with attachments worked out into radii.
+  function resolve(recipe) {
+    return { moves: recipe.moves.map((m) => ({ ...m, radius: effectiveRadius(recipe, m) })) };
   }
 
   // Move a move up (delta -1) or down (+1) the list. Later moves draw over earlier ones.
@@ -119,7 +165,7 @@
   // The pair of counted moves the solver uses by default: outermost and innermost.
   // Ties keep list order. Returns null with fewer than two counted moves.
   function defaultPair(recipe) {
-    const counted = countedMoves(recipe);
+    const counted = countedMoves(resolve(recipe));
     if (counted.length < 2) return null;
     let outer = counted[0];
     let inner = counted[1];
@@ -146,6 +192,10 @@
     addMove,
     removeMove,
     shiftMove,
+    attachedCircle,
+    effectiveRadius,
+    fieldInactive,
+    resolve,
     countedMoves,
     defaultPair,
     resolvePair,
