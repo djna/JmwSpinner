@@ -448,3 +448,20 @@ test('birds and bats step through a wingbeat along the sequence', () => {
   R.setField(move, 'shape', 'dot');
   assert.equal(R.fieldInactive(recipe, move, 'flap'), true);
 });
+
+test('every drawing move has a colour, defaulting to ink; nibbles have none', () => {
+  for (const type of ['circle', 'marks', 'semicircles', 'stepped', 'wings']) {
+    assert.equal(R.createMove(type).colour, R.INK, type);
+  }
+  assert.ok(!('colour' in R.createMove('nibbles')));
+  const move = R.createMove('wings');
+  assert.equal(R.setField(move, 'colour', '#FF8800'), true);
+  assert.equal(move.colour, '#ff8800');
+  for (const bad of ['red', '#f80', '#ff880', 'ff8800', 42, null]) {
+    assert.equal(R.setField(move, 'colour', bad), false, String(bad));
+  }
+  assert.equal(move.colour, '#ff8800');
+  const loaded = R.movesFromSaved([{ id: 7000, type: 'marks', colour: '#00aa44' }]);
+  assert.equal(loaded[0].colour, '#00aa44');
+  assert.equal(R.movesFromSaved([{ id: 7001, type: 'marks' }])[0].colour, R.INK); // older files
+});

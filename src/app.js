@@ -87,6 +87,18 @@
     const id = `move${move.id}-${field.key}`;
     const label = el('label', { for: id }, field.label);
 
+    if (field.colour) {
+      // A colour picker: the wheel follows as you pick; the finished choice is one undo step.
+      const picker = el('input', { type: 'color', id, class: 'wide' });
+      picker.addEventListener('input', () => {
+        if (Rc.setField(move, field.key, picker.value)) onChange();
+      });
+      syncList.push(() => {
+        picker.value = move[field.key];
+      });
+      return [label, picker];
+    }
+
     if (field.options || field.ref) {
       const select = el('select', { id, class: 'wide' });
       const fill = (options) => select.replaceChildren(...options.map(([value, text]) => el('option', { value }, text)));
@@ -273,7 +285,7 @@
     wheelCtx.clearRect(0, 0, wsize, wsize);
     R.drawBoard(wheelCtx, wsize);
     R.drawRecipe(wheelCtx, wsize, drawn, angle); // fresh draw so it is crisp at this canvas's size
-    if (pen) R.drawPen(wheelCtx, wsize, pen.radius, pen.width);
+    if (pen) R.drawPen(wheelCtx, wsize, pen.radius, pen.width, pen.colour);
   }
 
   // --- Drawing a circle: the wheel makes one slow turn under the pen.

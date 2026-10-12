@@ -11,6 +11,9 @@
   const RIM = '#c9c9c2';
   const MARGIN = 0.94; // fraction of the half-width used by the wheel
 
+  // The colour of the move being drawn (set by drawRecipe from the move's `colour`).
+  let ink = INK;
+
   // Make a canvas's backing store match its displayed size and the screen's pixel density.
   function fitCanvas(canvas) {
     const dpr = window.devicePixelRatio || 1;
@@ -67,7 +70,7 @@
     const cx = r * Math.cos(theta);
     const cy = r * Math.sin(theta);
     c.lineCap = 'round';
-    c.strokeStyle = INK;
+    c.strokeStyle = ink;
     c.lineWidth = width * j.width;
     c.beginPath();
     c.moveTo(cx - dx, cy - dy);
@@ -82,7 +85,7 @@
     const along = size * j.scale; // half the flat side
     const depth = along * j.squash; // how far the curve bulges
     c.lineCap = 'round';
-    c.strokeStyle = INK;
+    c.strokeStyle = ink;
     c.lineWidth = width * j.width;
     c.beginPath();
     c.ellipse(r * Math.cos(theta), r * Math.sin(theta), depth, along, theta + j.tilt, start, start + Math.PI);
@@ -91,7 +94,7 @@
 
   // A filled dot, `size` in radius.
   function dotAt(c, r, theta, size, j) {
-    c.fillStyle = INK;
+    c.fillStyle = ink;
     c.beginPath();
     c.ellipse(r * Math.cos(theta), r * Math.sin(theta), size * j.scale * j.squash, size * j.scale, theta + j.tilt, 0, TAU);
     c.fill();
@@ -108,7 +111,7 @@
     c.lineWidth = (width * j.width) / (size * j.scale);
     c.lineCap = 'round';
     c.lineJoin = 'round';
-    c.strokeStyle = INK;
+    c.strokeStyle = ink;
     c.beginPath();
     draw(c, flap);
     c.stroke();
@@ -212,8 +215,8 @@
   function drawWingRing(c, move) {
     const spacing = TAU / move.count;
     const lean = leanStep(move);
-    c.fillStyle = INK;
-    c.strokeStyle = INK;
+    c.fillStyle = ink;
+    c.strokeStyle = ink;
     c.lineJoin = 'round';
     for (let k = 0; k < move.count; k++) {
       const j = wobbleOf(move, k);
@@ -253,7 +256,7 @@
   function strokeCircle(c, move) {
     const sweep = move.sweep ?? 1;
     c.lineWidth = move.width;
-    c.strokeStyle = INK;
+    c.strokeStyle = ink;
     c.beginPath();
     if (sweep >= 1) {
       c.lineCap = 'butt';
@@ -325,14 +328,16 @@
   function drawRecipe(ctx, size, recipe, angle = 0) {
     inWheelSpace(ctx, size, angle, (c) => {
       for (const move of recipe.moves) {
+        ink = move.colour || INK;
         MOVES[move.type](c, move);
       }
+      ink = INK;
     });
   }
 
   // A pen held still over the top of the wheel, its nib on a circle of the given radius,
   // seen from above: the barrel leans in over the board so it stays in view.
-  function drawPen(ctx, size, radius, width) {
+  function drawPen(ctx, size, radius, width, colour = INK) {
     inWheelSpace(ctx, size, 0, (c) => {
       c.lineCap = 'round';
       c.lineWidth = 0.09;
@@ -344,7 +349,7 @@
 
       c.beginPath();
       c.arc(0, -radius, Math.max(width / 2, 0.012), 0, TAU);
-      c.fillStyle = INK;
+      c.fillStyle = colour;
       c.fill();
       c.lineWidth = 0.008;
       c.strokeStyle = 'rgba(60, 80, 150, 0.9)';
