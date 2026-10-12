@@ -57,10 +57,18 @@
     return `${recipe.moves.indexOf(move) + 1}. ${Rc.MOVE_TYPES[move.type].label}`;
   }
 
-  // The choices for a circle reference: none, or any solid circle in the recipe.
-  function circleOptions() {
-    const options = [['', 'nothing (own radius)']];
-    for (const m of recipe.moves) if (m.type === 'circle') options.push([m.id, moveName(m)]);
+  // The choices for a reference field: none, or another move of the right kind. A ring
+  // shows its count, since rings line up shape for shape when their counts match or divide.
+  function refOptions(move, field) {
+    if (field.ref === 'circle') {
+      const options = [['', 'nothing (own radius)']];
+      for (const m of recipe.moves) if (m.type === 'circle') options.push([m.id, moveName(m)]);
+      return options;
+    }
+    const options = [['', 'the top of the wheel']];
+    for (const m of Rc.countedMoves(recipe)) {
+      if (m.id !== move.id) options.push([m.id, `${moveName(m)} (${m.count})`]);
+    }
     return options;
   }
 
@@ -78,15 +86,15 @@
     const id = `move${move.id}-${field.key}`;
     const label = el('label', { for: id }, field.label);
 
-    if (field.options || field.circleRef) {
+    if (field.options || field.ref) {
       const select = el('select', { id, class: 'wide' });
-      for (const [value, text] of field.options || circleOptions()) {
-        select.append(el('option', { value }, text));
-      }
+      const fill = (options) => select.replaceChildren(...options.map(([value, text]) => el('option', { value }, text)));
+      if (field.options) fill(field.options);
       select.addEventListener('change', () => {
         if (Rc.setField(move, field.key, select.value)) onChange();
       });
       syncList.push(() => {
+        if (field.ref) fill(refOptions(move, field)); // names and counts may have changed
         select.value = move[field.key] ?? '';
         markInactive(move, field, label, [select]);
       });
@@ -172,6 +180,12 @@
 
   function renderDraft() {
     if (!Rc.attachedCircle(recipe, draft)) Rc.setField(draft, 'attach', null); // its circle was removed
+    if (!Rc.alignedRing(recipe, draft)) Rc.setField(draft, 'align', null);
+    if (draft.type === 'nibbles' && draft.attach === null) {
+      // Nibbles only show in a circle, so start them on the most recent one.
+      const circles = recipe.moves.filter((m) => m.type === 'circle');
+      if (circles.length) Rc.setField(draft, 'attach', circles[circles.length - 1].id);
+    }
     draftSyncs = [];
 
     const head = el('div', { class: 'move-head' });
