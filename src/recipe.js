@@ -127,6 +127,74 @@
       },
       wobbly: true,
     },
+    // Shapes at the ring's positions, stepping in radius from one to the next, so the still
+    // wheel shows a coil and the strobe makes it move in or out. The pattern can run over
+    // several turns, giving `count × turns` shapes (see steppedRadii).
+    stepped: {
+      label: 'Stepped ring',
+      noun: 'positions',
+      counted: true,
+      fields: [
+        COUNT,
+        { key: 'turns', label: 'Turns', min: 1, max: 4, step: 1, integer: true },
+        {
+          key: 'pattern',
+          label: 'Pattern',
+          options: [
+            ['loop', 'out and back'],
+            ['out', 'out only'],
+          ],
+        },
+        {
+          key: 'climb',
+          label: 'Climbs',
+          options: [
+            ['cw', 'clockwise'],
+            ['acw', 'anticlockwise'],
+          ],
+        },
+        { key: 'inner', label: 'Inner radius', min: 0.05, max: 0.95, step: 0.01 },
+        { key: 'outer', label: 'Outer radius', min: 0.05, max: 0.95, step: 0.01 },
+        {
+          key: 'shape',
+          label: 'Shape',
+          options: [
+            ['dot', 'dots'],
+            ['semicircle', 'semicircles'],
+            ['mark', 'marks'],
+          ],
+        },
+        { key: 'size', label: 'Size', min: 0.005, max: 0.15, step: 0.005 },
+        { key: 'width', label: 'Pen width', min: 0.005, max: 0.1, step: 0.005 },
+        {
+          key: 'bulge',
+          label: 'Bulges',
+          options: [
+            ['in', 'towards the centre'],
+            ['out', 'towards the rim'],
+          ],
+        },
+        ALIGN,
+        OFFSET,
+        WOBBLE,
+      ],
+      defaults: {
+        count: 13,
+        turns: 1,
+        pattern: 'loop',
+        climb: 'cw',
+        inner: 0.3,
+        outer: 0.7,
+        shape: 'dot',
+        size: 0.03,
+        width: 0.02,
+        bulge: 'in',
+        align: null,
+        offset: 0,
+        wobble: 0.3,
+      },
+      wobbly: true,
+    },
   };
 
   let nextId = 1;
@@ -254,6 +322,7 @@
   // The radius a move is actually drawn at. An attached move sits with its flat side on
   // the inner or outer edge of its circle's pen stroke, so it follows that circle.
   function effectiveRadius(recipe, move) {
+    if (move.type === 'stepped') return (move.inner + move.outer) / 2; // its middle, for sorting
     const circle = attachedCircle(recipe, move);
     if (!circle) return move.radius;
     const half = circle.width / 2;
@@ -265,7 +334,46 @@
     const attached = attachedCircle(recipe, move) !== null;
     if (key === 'radius') return attached;
     if (key === 'edge') return !attached;
+    if (move.type === 'stepped') {
+      if (key === 'width') return move.shape === 'dot';
+      if (key === 'bulge') return move.shape !== 'semicircle';
+    }
     return false;
+  }
+
+  // The radius of each shape in a stepped ring, in order round the wheel: `count × turns`
+  // shapes climbing from inner to outer radius. Out only climbs all the way, then jumps
+  // back (a seam). Out and back climbs for the first half and comes back for the second,
+  // so the last shape leads smoothly into the first.
+  function steppedRadii(move) {
+    const total = move.count * move.turns;
+    const climb = (u) => move.inner + (move.outer - move.inner) * u;
+    const radii = [];
+    for (let k = 0; k < total; k++) {
+      if (move.pattern === 'out') radii.push(climb(total > 1 ? k / (total - 1) : 0));
+      else radii.push(climb(k <= total / 2 ? (2 * k) / total : (2 * (total - k)) / total));
+    }
+    return radii;
+  }
+
+  // How a stepped ring reads under a strobe that turns the wheel `step` radians per flash.
+  // Each flash, the wheel moves on about `skip` whole spacings, so at every position the
+  // shape `skip` places back along the sequence takes over (or forward, if it climbs
+  // anticlockwise). Returns 'in' or 'out' (a spiral), 'breathes' (out and back: half the
+  // ring moves out and half in) or 'still' (no whole spacings skipped: no radial motion),
+  // plus `strain`: how far the radius moves per flash compared with the gap between
+  // neighbouring shapes. Near 1 the eye may match a neighbour instead.
+  function spiralReading(move, step) {
+    const a = TAU / move.count;
+    const skip = Math.round(step / a);
+    const radii = steppedRadii(move);
+    const rise = radii.length > 1 ? Math.abs(radii[1] - radii[0]) : 0;
+    const gap = Math.max(1e-9, Math.min(move.inner, move.outer) * a);
+    const strain = (Math.abs(skip) * rise) / gap;
+    if (skip === 0 || rise === 0) return { reading: 'still', skip, strain };
+    if (move.pattern === 'loop') return { reading: 'breathes', skip, strain };
+    const inward = skip * (move.climb === 'cw' ? 1 : -1) > 0;
+    return { reading: inward ? 'in' : 'out', skip, strain };
   }
 
   // The recipe as drawn: copies of the moves with attachments and alignments worked out
@@ -334,6 +442,8 @@
     phaseOf,
     effectiveRadius,
     fieldInactive,
+    steppedRadii,
+    spiralReading,
     resolve,
     wobbleOf,
     rewobble,

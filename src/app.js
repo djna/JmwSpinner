@@ -305,7 +305,29 @@
 
     return `<p><b>${moveName(move)}</b> (${n} ${Rc.MOVE_TYPES[move.type].noun}, ${fmt(deg(a))}° apart) appears to move
       <b>${fmt(deg(d))}°</b> per flash, about <b>${fmt(deg(d) * params.strobe, 1)}°/s</b>,
-      so it ${describeDirection(d)}.${warning}</p>`;
+      so it ${describeDirection(d)}.${move.type === 'stepped' ? describeSpiral(move, s) : ''}${warning}</p>`;
+  }
+
+  const SPIRAL_READINGS = {
+    in: 'spirals <b>inward</b>',
+    out: 'spirals <b>outward</b>',
+    breathes: '<b>breathes</b>: half the ring moves outward while the other half moves inward',
+    still: 'shows <b>no in or out motion</b>, because the wheel skips no whole spacings between flashes',
+  };
+
+  // How a stepped ring reads in or out at this strobe setting, and whether it will hold up.
+  function describeSpiral(move, s) {
+    const { reading, skip, strain } = Rc.spiralReading(move, s);
+    const shapes = move.count * move.turns;
+    const why = reading === 'still' ? '' : ` (the wheel skips ${Math.abs(skip)} spacing${Math.abs(skip) === 1 ? '' : 's'} per flash)`;
+    let text = ` With its ${shapes} shapes it ${SPIRAL_READINGS[reading]}${why}.`;
+    if (reading === 'in' || reading === 'out') {
+      text += ` Switch <i>Climbs</i> to make it spiral ${reading === 'in' ? 'outward' : 'inward'}.`;
+    }
+    if (strain > 0.75) {
+      text += ` <span class="warn">The radius changes a lot between neighbouring shapes, so the eye may match the wrong ones and the motion may break up. Try more positions, more turns or a smaller radius range.</span>`;
+    }
+    return text;
   }
 
   function updateReadout() {

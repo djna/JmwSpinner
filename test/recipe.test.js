@@ -231,3 +231,52 @@ test('nibbles cut their circle wherever they are in the recipe', () => {
   R.setField(nib, 'attach', circle.id);
   assert.equal(R.resolve(recipe).moves[1].nibbles.length, 1);
 });
+
+const near = (actual, expected) =>
+  assert.deepEqual(actual.map((x) => Math.round(x * 1e9) / 1e9), expected);
+
+test('stepped radii: out only climbs then jumps back', () => {
+  const move = R.createMove('stepped', { count: 5, pattern: 'out', inner: 0.2, outer: 0.6 });
+  near(R.steppedRadii(move), [0.2, 0.3, 0.4, 0.5, 0.6]);
+});
+
+test('stepped radii: out and back over one turn goes out for half and back for half', () => {
+  const move = R.createMove('stepped', { count: 4, pattern: 'loop', inner: 0.2, outer: 0.6 });
+  near(R.steppedRadii(move), [0.2, 0.4, 0.6, 0.4]);
+});
+
+test('stepped radii: two turns give count × 2 shapes, a full turn out and a full turn back', () => {
+  const move = R.createMove('stepped', { count: 4, turns: 2, pattern: 'loop', inner: 0.2, outer: 0.6 });
+  near(R.steppedRadii(move), [0.2, 0.3, 0.4, 0.5, 0.6, 0.5, 0.4, 0.3]);
+});
+
+test('a stepped ring spirals in or out depending on the skip count and climb direction', () => {
+  const move = R.createMove('stepped', { count: 12, pattern: 'out', climb: 'cw' });
+  const a = (2 * Math.PI) / 12;
+  assert.equal(R.spiralReading(move, a + 0.01).reading, 'in'); // one spacing on, drift with
+  assert.equal(R.spiralReading(move, a - 0.01).reading, 'in'); // one spacing on, drift against
+  assert.equal(R.spiralReading(move, 0.01).reading, 'still'); // no whole spacing skipped
+  R.setField(move, 'climb', 'acw');
+  assert.equal(R.spiralReading(move, a + 0.01).reading, 'out');
+  assert.equal(R.spiralReading(move, -a).reading, 'in'); // wheel turning the other way
+  R.setField(move, 'pattern', 'loop');
+  assert.equal(R.spiralReading(move, a).reading, 'breathes');
+});
+
+test('the reading flags radial steps that are large next to the gap between shapes', () => {
+  const gentle = R.createMove('stepped', { count: 12, inner: 0.4, outer: 0.5 });
+  const steep = R.createMove('stepped', { count: 12, inner: 0.1, outer: 0.9 });
+  const a = (2 * Math.PI) / 12;
+  assert.ok(R.spiralReading(gentle, a).strain < 0.5);
+  assert.ok(R.spiralReading(steep, a).strain > 0.75);
+});
+
+test('stepped ring fields that do not apply to the chosen shape are inactive', () => {
+  const recipe = R.defaultRecipe();
+  const move = R.addMove(recipe, 'stepped'); // dots
+  assert.equal(R.fieldInactive(recipe, move, 'width'), true);
+  assert.equal(R.fieldInactive(recipe, move, 'bulge'), true);
+  R.setField(move, 'shape', 'semicircle');
+  assert.equal(R.fieldInactive(recipe, move, 'width'), false);
+  assert.equal(R.fieldInactive(recipe, move, 'bulge'), false);
+});
