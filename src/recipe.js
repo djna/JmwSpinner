@@ -181,7 +181,7 @@
         OFFSET,
         // Shapes further out lag further behind (against the spin), by up to `trail` of a
         // spacing at the outer radius, as if thrown from the inner end.
-        { key: 'trail', label: 'Trail', min: -1, max: 1, step: 0.05, signed: true },
+        { key: 'trail', label: 'Trail', min: -3, max: 3, step: 0.05, signed: true },
         WOBBLE,
       ],
       defaults: {
@@ -410,9 +410,11 @@
   // anticlockwise). Returns 'in' or 'out' (a spiral), 'breathes' (out and back: half the
   // ring moves out and half in) or 'still' (no whole spacings skipped: no radial motion),
   // plus `strain`: how far the radius moves per flash compared with the gap between
-  // neighbouring shapes (near 1 the eye may match a neighbour instead), and `flashes`:
-  // how many flashes a shape takes to travel from the inner radius to the outer one, at
-  // one step along the sequence per skipped spacing.
+  // neighbouring shapes (near 1 the eye may match a neighbour instead), `flashes`: how
+  // many flashes a shape takes to travel from the inner radius to the outer one, at one
+  // step along the sequence per skipped spacing, and `lag`: how much trail changes each
+  // shape's apparent turn per flash on the way out (radians, clockwise positive), on top
+  // of the ring's drift.
   function spiralReading(move, step) {
     const a = TAU / move.count;
     const skip = Math.round(step / a);
@@ -422,10 +424,15 @@
     const strain = (Math.abs(skip) * rise) / gap;
     const outSteps = move.pattern === 'out' ? radii.length - 1 : radii.length / 2;
     const flashes = skip === 0 ? Infinity : outSteps / Math.abs(skip);
-    if (skip === 0 || rise === 0) return { reading: 'still', skip, strain, flashes };
-    if (move.pattern === 'loop') return { reading: 'breathes', skip, strain, flashes };
-    const inward = skip * (move.climb === 'cw' ? 1 : -1) > 0;
-    return { reading: inward ? 'in' : 'out', skip, strain, flashes };
+    // Trail sets shapes back by up to `trail` spacings over the climb: each step along the
+    // sequence lags a further trail·a/outSteps, which the strobe turns into a slower (or,
+    // climbing clockwise, faster) apparent turn.
+    const turn = move.climb === 'cw' ? 1 : -1;
+    const lag = outSteps > 0 ? (skip * turn * (move.trail || 0) * a) / outSteps : 0;
+    if (skip === 0 || rise === 0) return { reading: 'still', skip, strain, flashes, lag: 0 };
+    if (move.pattern === 'loop') return { reading: 'breathes', skip, strain, flashes, lag };
+    const inward = skip * turn > 0;
+    return { reading: inward ? 'in' : 'out', skip, strain, flashes, lag };
   }
 
   // The recipe as drawn: copies of the moves with attachments and alignments worked out

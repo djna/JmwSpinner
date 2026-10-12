@@ -326,3 +326,14 @@ test('flight length is one sequence step per flash per skipped spacing', () => {
   R.setField(out, 'turns', 24);
   assert.equal(out.turns, 24);
 });
+
+test('trail slows the apparent turn of a shape climbing anticlockwise', () => {
+  // Matches what the strobe view measured: 13 positions, 6 turns, out only, anticlockwise.
+  const a = (2 * Math.PI) / 13;
+  const move = R.createMove('stepped', { count: 13, turns: 6, pattern: 'out', climb: 'acw', trail: 1 });
+  const { lag, flashes } = R.spiralReading(move, a + 0.05);
+  assert.equal(flashes, 77);
+  assert.ok(Math.abs(lag + a / 77) < 1e-12); // one spacing of lag spread over 77 steps
+  R.setField(move, 'trail', 0);
+  assert.ok(R.spiralReading(move, a + 0.05).lag === 0); // -0 is fine
+});
