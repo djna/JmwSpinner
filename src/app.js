@@ -105,8 +105,8 @@
     const range = el('input', { type: 'range', id, min: field.min, max: field.max, step: field.step });
     const box = el('input', { type: 'number', min: field.min, step: field.integer ? 1 : 'any' });
     box.setAttribute('aria-label', field.label);
-    // Radius shows where the move is actually drawn, which follows an attached circle.
-    const shown = () => (field.key === 'radius' ? Rc.effectiveRadius(recipe, move) : move[field.key]);
+    // Shows where the move is actually drawn, for fields that can follow another move.
+    const shown = () => Rc.shownValue(recipe, move, field.key);
     const show = () => {
       range.value = shown();
       box.value = Number(shown().toFixed(4));
@@ -184,6 +184,7 @@
   function renderDraft() {
     if (!Rc.attachedCircle(recipe, draft)) Rc.setField(draft, 'attach', null); // its circle was removed
     if (!Rc.alignedRing(recipe, draft)) Rc.setField(draft, 'align', null);
+    if (draft.type === 'stepped' && !Rc.startRing(recipe, draft)) Rc.setField(draft, 'from', null);
     if (draft.type === 'nibbles' && draft.attach === null) {
       // Nibbles only show in a circle, so start them on the most recent one.
       const circles = recipe.moves.filter((m) => m.type === 'circle');
@@ -317,7 +318,8 @@
 
   // How a stepped ring reads in or out at this strobe setting, and whether it will hold up.
   function describeSpiral(move, s) {
-    const { reading, skip, strain } = Rc.spiralReading(move, s);
+    const drawn = Rc.resolve(recipe).moves.find((m) => m.id === move.id); // inner radius worked out
+    const { reading, skip, strain } = Rc.spiralReading(drawn, s);
     const shapes = move.count * move.turns;
     const why = reading === 'still' ? '' : ` (the wheel skips ${Math.abs(skip)} spacing${Math.abs(skip) === 1 ? '' : 's'} per flash)`;
     let text = ` With its ${shapes} shapes it ${SPIRAL_READINGS[reading]}${why}.`;

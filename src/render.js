@@ -122,12 +122,16 @@
 
   // A stepped ring: dots, semicircles or marks at the ring's positions, going round
   // clockwise or anticlockwise, each at the next radius in the sequence (steppedRadii).
+  // With trail, each lags behind its position (anticlockwise, against the spin) in
+  // proportion to how far out it is.
   function drawSteppedRing(c, move) {
     const spacing = TAU / move.count;
     const turn = move.climb === 'acw' ? -1 : 1;
+    const range = move.outer - move.inner;
     steppedRadii(move).forEach((radius, k) => {
       const j = wobbleOf(move, k);
-      const theta = turn * (k + j.angle) * spacing + (move.phase || 0) - Math.PI / 2;
+      const lag = (move.trail || 0) * (range ? (radius - move.inner) / range : 0) * spacing;
+      const theta = turn * (k + j.angle) * spacing + (move.phase || 0) - lag - Math.PI / 2;
       const r = radius + j.radial * move.size;
       if (move.shape === 'dot') dotAt(c, r, theta, move.size, j);
       else if (move.shape === 'mark') markAt(c, r, theta, 2 * move.size, move.width, j);

@@ -280,3 +280,37 @@ test('stepped ring fields that do not apply to the chosen shape are inactive', (
   assert.equal(R.fieldInactive(recipe, move, 'width'), false);
   assert.equal(R.fieldInactive(recipe, move, 'bulge'), false);
 });
+
+test('a stepped ring can start just beyond another ring and follows it', () => {
+  const recipe = R.defaultRecipe();
+  const circle = R.addMove(recipe, 'circle'); // radius 0.9, width 0.08
+  R.setField(circle, 'radius', 0.5);
+  const semis = R.addMove(recipe, 'semicircles');
+  R.setField(semis, 'attach', circle.id);
+  R.setField(semis, 'edge', 'outer'); // flat side at 0.54
+  R.setField(semis, 'bulge', 'out'); // reaching 0.54 + 0.05
+  const dots = R.addMove(recipe, 'stepped');
+  R.setField(dots, 'from', semis.id);
+  R.setField(dots, 'gap', 0.01);
+  const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `expected ${b}, got ${a}`);
+
+  close(R.steppedInner(recipe, dots), 0.6);
+  close(R.shownValue(recipe, dots, 'inner'), 0.6);
+  assert.equal(R.fieldInactive(recipe, dots, 'inner'), true);
+  assert.equal(R.fieldInactive(recipe, dots, 'gap'), false);
+  close(R.resolve(recipe).moves.find((m) => m.id === dots.id).inner, 0.6);
+
+  R.setField(circle, 'radius', 0.4); // the semicircles move, and the dots follow
+  close(R.steppedInner(recipe, dots), 0.5);
+
+  R.removeMove(recipe, semis.id);
+  assert.equal(dots.from, null);
+  close(R.steppedInner(recipe, dots), dots.inner);
+});
+
+test('trail and offset may be negative; a ring cannot start beyond itself', () => {
+  const move = R.createMove('stepped');
+  R.setField(move, 'trail', -0.4);
+  assert.equal(move.trail, -0.4);
+  assert.equal(R.setField(move, 'from', move.id), false);
+});

@@ -24,7 +24,7 @@
   // Where a ring's shapes sit around the wheel: from the top, or from another ring's
   // positions, shifted by `offset` of this ring's own spacing (0.5 is halfway between).
   const ALIGN = { key: 'align', label: 'Align with', ref: 'ring' };
-  const OFFSET = { key: 'offset', label: 'Offset', min: -0.5, max: 0.5, step: 0.05 };
+  const OFFSET = { key: 'offset', label: 'Offset', min: -0.5, max: 0.5, step: 0.05, signed: true };
   // Hand-drawn imperfection for moves drawn shape by shape (see wobbleOf). A solid circle
   // has none: the pen is held still while the wheel turns, so it comes out true.
   const WOBBLE = { key: 'wobble', label: 'Wobble', min: 0, max: 1, step: 0.05 };
@@ -153,6 +153,9 @@
             ['acw', 'anticlockwise'],
           ],
         },
+        // The inner radius can instead sit `gap` beyond the reach of another ring, and follow it.
+        { key: 'from', label: 'Start beyond', ref: 'ring' },
+        { key: 'gap', label: 'Gap', min: 0, max: 0.2, step: 0.005 },
         { key: 'inner', label: 'Inner radius', min: 0.05, max: 0.95, step: 0.01 },
         { key: 'outer', label: 'Outer radius', min: 0.05, max: 0.95, step: 0.01 },
         {
@@ -176,6 +179,9 @@
         },
         ALIGN,
         OFFSET,
+        // Shapes further out lag further behind (against the spin), by up to `trail` of a
+        // spacing at the outer radius, as if thrown from the inner end.
+        { key: 'trail', label: 'Trail', min: -1, max: 1, step: 0.05, signed: true },
         WOBBLE,
       ],
       defaults: {
@@ -183,6 +189,8 @@
         turns: 1,
         pattern: 'loop',
         climb: 'cw',
+        from: null,
+        gap: 0.02,
         inner: 0.3,
         outer: 0.7,
         shape: 'dot',
@@ -191,6 +199,7 @@
         bulge: 'in',
         align: null,
         offset: 0,
+        trail: 0,
         wobble: 0.3,
       },
       wobbly: true,
@@ -232,7 +241,7 @@
     let v = Number(value);
     if (!Number.isFinite(v)) return false;
     if (field.integer) v = Math.round(v);
-    move[key] = field.key === 'offset' ? v : Math.max(field.min, v); // an offset may go either way
+    move[key] = field.signed ? v : Math.max(field.min, v);
     return true;
   }
 
@@ -292,6 +301,7 @@
     for (const m of recipe.moves) {
       if (m.attach === id) m.attach = null;
       if (m.align === id) m.align = null;
+      if (m.from === id) m.from = null;
     }
     return true;
   }
@@ -322,11 +332,46 @@
   // The radius a move is actually drawn at. An attached move sits with its flat side on
   // the inner or outer edge of its circle's pen stroke, so it follows that circle.
   function effectiveRadius(recipe, move) {
-    if (move.type === 'stepped') return (move.inner + move.outer) / 2; // its middle, for sorting
+    if (move.type === 'stepped') return (steppedInner(recipe, move) + move.outer) / 2; // its middle, for sorting
     const circle = attachedCircle(recipe, move);
     if (!circle) return move.radius;
     const half = circle.width / 2;
     return move.edge === 'outer' ? circle.radius + half : Math.max(0, circle.radius - half);
+  }
+
+  // The ring a stepped ring starts beyond, or null if none (or it no longer exists).
+  function startRing(recipe, move) {
+    if (move.from == null) return null;
+    return recipe.moves.find((m) => m.id === move.from && MOVE_TYPES[m.type].counted) || null;
+  }
+
+  // How far out a ring's shapes reach from the centre.
+  function ringReach(recipe, move, seen = new Set()) {
+    const r = effectiveRadius(recipe, move);
+    if (move.type === 'marks') return r + move.length / 2;
+    if (move.type === 'semicircles') return r + (move.bulge === 'out' ? move.size : 0);
+    if (move.type === 'stepped') {
+      return Math.max(steppedInner(recipe, move, seen), move.outer) + move.size;
+    }
+    return r; // nibbles: the circle's edge
+  }
+
+  // A stepped ring's inner radius: its own, or `gap` beyond the reach of the ring it starts
+  // from. A loop of rings starting from each other stops at the first ring met twice.
+  function steppedInner(recipe, move, seen = new Set()) {
+    const from = startRing(recipe, move);
+    if (!from || seen.has(move.id)) return move.inner;
+    seen.add(move.id);
+    return ringReach(recipe, from, seen) + move.gap;
+  }
+
+  // The value a number field shows: where the move is really drawn, for fields that follow
+  // another move (radius on an attached ring, inner radius on a stepped ring that starts
+  // beyond another), otherwise the move's own value.
+  function shownValue(recipe, move, key) {
+    if (key === 'radius') return effectiveRadius(recipe, move);
+    if (key === 'inner' && move.type === 'stepped') return steppedInner(recipe, move);
+    return move[key];
   }
 
   // Whether a field has no effect for this move as it stands, so the form can grey it out.
@@ -335,6 +380,9 @@
     if (key === 'radius') return attached;
     if (key === 'edge') return !attached;
     if (move.type === 'stepped') {
+      const starts = startRing(recipe, move) !== null;
+      if (key === 'inner') return starts;
+      if (key === 'gap') return !starts;
       if (key === 'width') return move.shape === 'dot';
       if (key === 'bulge') return move.shape !== 'semicircle';
     }
@@ -381,6 +429,7 @@
   function resolve(recipe) {
     const moves = recipe.moves.map((m) => {
       const copy = { ...m, radius: effectiveRadius(recipe, m) };
+      if (m.type === 'stepped') copy.inner = steppedInner(recipe, m);
       if (MOVE_TYPES[m.type].counted) copy.phase = phaseOf(recipe, m);
       return copy;
     });
@@ -441,6 +490,10 @@
     alignedRing,
     phaseOf,
     effectiveRadius,
+    startRing,
+    ringReach,
+    steppedInner,
+    shownValue,
     fieldInactive,
     steppedRadii,
     spiralReading,
