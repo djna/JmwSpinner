@@ -74,12 +74,21 @@
     c.stroke();
   }
 
-  // A full circle in one wide pen stroke, like the stroke drawn while the wheel turns.
+  // A circle in one wide pen stroke, drawn by turning the wheel under a pen held at the top.
+  // `sweep` (0..1, default 1) is how much of a turn has passed under the pen so far: the
+  // newest ink is at the pen, and older ink has turned clockwise away from it.
   function drawSolidCircle(c, move) {
+    const sweep = move.sweep ?? 1;
     c.lineWidth = move.width;
     c.strokeStyle = INK;
     c.beginPath();
-    c.arc(0, 0, move.radius, 0, TAU);
+    if (sweep >= 1) {
+      c.lineCap = 'butt';
+      c.arc(0, 0, move.radius, 0, TAU);
+    } else {
+      c.lineCap = 'round';
+      c.arc(0, 0, move.radius, -Math.PI / 2 - sweep * TAU, -Math.PI / 2);
+    }
     c.stroke();
   }
 
@@ -109,12 +118,34 @@
     semicircles: drawSemicircleRing,
   };
 
-  // Draw every move in the recipe, in the wheel's own frame.
-  function drawRecipe(ctx, size, recipe) {
-    inWheelSpace(ctx, size, 0, (c) => {
+  // Draw every move in the recipe, in the wheel's own frame turned by `angle`.
+  function drawRecipe(ctx, size, recipe, angle = 0) {
+    inWheelSpace(ctx, size, angle, (c) => {
       for (const move of recipe.moves) {
         MOVES[move.type](c, move);
       }
+    });
+  }
+
+  // A pen held still over the top of the wheel, its nib on a circle of the given radius,
+  // seen from above: the barrel leans in over the board so it stays in view.
+  function drawPen(ctx, size, radius, width) {
+    inWheelSpace(ctx, size, 0, (c) => {
+      c.lineCap = 'round';
+      c.lineWidth = 0.09;
+      c.strokeStyle = 'rgba(60, 80, 150, 0.55)';
+      c.beginPath();
+      c.moveTo(0.03, -radius + 0.035);
+      c.lineTo(0.26, -radius + 0.32);
+      c.stroke();
+
+      c.beginPath();
+      c.arc(0, -radius, Math.max(width / 2, 0.012), 0, TAU);
+      c.fillStyle = INK;
+      c.fill();
+      c.lineWidth = 0.008;
+      c.strokeStyle = 'rgba(60, 80, 150, 0.9)';
+      c.stroke();
     });
   }
 
@@ -141,5 +172,5 @@
     ctx.restore();
   }
 
-  root.JmwRender = { fitCanvas, makeLayer, drawBoard, drawRecipe, drawRotated, fadeLayer };
+  root.JmwRender = { fitCanvas, makeLayer, drawBoard, drawRecipe, drawPen, drawRotated, fadeLayer };
 })(this);

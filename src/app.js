@@ -118,6 +118,7 @@
     head.append(el('span', { class: 'move-name' }, moveName(move)));
 
     const actions = [
+      ...(move.type === 'circle' ? [['↻', 'Draw again', false, () => startDrawing(move)]] : []),
       ['↑', 'Move up', index === 0, () => Rc.shiftMove(recipe, move.id, -1)],
       ['↓', 'Move down', index === recipe.moves.length - 1, () => Rc.shiftMove(recipe, move.id, 1)],
       ['✕', 'Remove', false, () => Rc.removeMove(recipe, move.id)],
@@ -155,7 +156,8 @@
     newMoveType.append(el('option', { value: type }, spec.label));
   }
   document.getElementById('add-move').addEventListener('click', () => {
-    Rc.addMove(recipe, newMoveType.value);
+    const move = Rc.addMove(recipe, newMoveType.value);
+    if (move.type === 'circle') startDrawing(move);
     recipeChanged();
   });
 
@@ -175,8 +177,28 @@
     redrawRecipe();
   }
 
+  // Redraw after any recipe change: the drawing, the move cards, the solver and the readout.
   function redrawRecipe() {
+    redrawDrawing();
+    for (const sync of syncs) sync();
+    updatePairChoice();
+    updateReadout();
+  }
+
+  // Redraw the marks layer and the wheel view. While a circle is being drawn, the wheel
+  // view turns under a pen held at the top and the circle is only partly there.
+  function redrawDrawing() {
     const drawn = Rc.resolve(recipe);
+    let angle = 0;
+    let pen = null;
+    if (drawing) {
+      pen = drawn.moves.find((m) => m.id === drawing.id);
+      if (pen) {
+        pen.sweep = drawing.progress;
+        angle = drawing.progress * M.TAU;
+      }
+    }
+
     const marksCtx = marks.getContext('2d');
     marksCtx.clearRect(0, 0, size, size);
     R.drawRecipe(marksCtx, size, drawn);
@@ -184,10 +206,25 @@
     const wsize = wheelCanvas.width;
     wheelCtx.clearRect(0, 0, wsize, wsize);
     R.drawBoard(wheelCtx, wsize);
-    R.drawRecipe(wheelCtx, wsize, drawn); // fresh draw so it is crisp at this canvas's size
-    for (const sync of syncs) sync();
-    updatePairChoice();
-    updateReadout();
+    R.drawRecipe(wheelCtx, wsize, drawn, angle); // fresh draw so it is crisp at this canvas's size
+    if (pen) R.drawPen(wheelCtx, wsize, pen.radius, pen.width);
+  }
+
+  // --- Drawing a circle: the wheel makes one slow turn under the pen.
+
+  const DRAW_SECONDS = 2.5;
+  let drawing = null; // { id, start, progress } while a circle is being drawn
+
+  function startDrawing(move) {
+    drawing = { id: move.id, start: null, progress: 0 };
+  }
+
+  // Advance the drawing to time `t` (seconds). Ends when the turn is done or the move is gone.
+  function stepDrawing(t) {
+    if (drawing.start === null) drawing.start = t;
+    drawing.progress = Math.min(1, (t - drawing.start) / DRAW_SECONDS);
+    if (drawing.progress >= 1 || !recipe.moves.some((m) => m.id === drawing.id)) drawing = null;
+    redrawDrawing();
   }
 
   // --- Readout: the strobe maths for the current settings.
@@ -300,6 +337,8 @@
       lastTime = t;
       nextFlash = t;
     }
+
+    if (drawing) stepDrawing(t);
 
     if (!paused) {
       const omega = M.TAU * params.spin;
