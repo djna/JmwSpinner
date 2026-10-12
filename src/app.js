@@ -356,6 +356,14 @@
     const why = reading === 'still' ? '' : ` (the wheel skips ${Math.abs(skip)} spacing${Math.abs(skip) === 1 ? '' : 's'} per flash)`;
     let text = ` With its ${shapes} shapes it ${SPIRAL_READINGS[reading]}${why}.`;
     if (reading !== 'still') text += ` ${describeFlight(move, s, flashes, lag)}`;
+    if ((move.shape === 'bird' || move.shape === 'bat') && move.flap > 0 && skip !== 0) {
+      // Each flash moves on `skip` drawings along the sequence, so `skip` steps of the beat.
+      const beats = (Math.abs(skip) * params.strobe) / move.flap;
+      text += ` The ${move.shape}s flap about <b>${fmt(beats, 1)}</b> times a second.`;
+      if (Math.abs(skip) * 2 >= move.flap) {
+        text += ` <span class="warn">With ${move.flap} drawings per beat and ${Math.abs(skip)} skipped per flash, the beat will look jumbled; use more drawings per beat.</span>`;
+      }
+    }
     if (reading === 'in' || reading === 'out') {
       text += ` Switch <i>Climbs</i> to make it spiral ${reading === 'in' ? 'outward' : 'inward'}.`;
     }

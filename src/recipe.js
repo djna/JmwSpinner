@@ -165,9 +165,14 @@
             ['dot', 'dots'],
             ['semicircle', 'semicircles'],
             ['mark', 'marks'],
+            ['bird', 'birds (outline)'],
+            ['bat', 'bats (outline)'],
           ],
         },
         { key: 'size', label: 'Size', min: 0.005, max: 0.15, step: 0.005 },
+        // Birds and bats: drawings per wingbeat. Neighbours in the sequence are drawn at
+        // successive points of the beat, so under the strobe they flap (0: wings still).
+        { key: 'flap', label: 'Flap', min: 0, max: 12, step: 1, integer: true },
         { key: 'width', label: 'Pen width', min: 0.005, max: 0.1, step: 0.005 },
         {
           key: 'bulge',
@@ -195,6 +200,7 @@
         outer: 0.7,
         shape: 'dot',
         size: 0.03,
+        flap: 4,
         width: 0.02,
         bulge: 'in',
         align: null,
@@ -506,6 +512,7 @@
       if (key === 'gap') return !starts;
       if (key === 'width') return move.shape === 'dot';
       if (key === 'bulge') return move.shape !== 'semicircle';
+      if (key === 'flap') return move.shape !== 'bird' && move.shape !== 'bat';
     }
     return false;
   }
@@ -523,6 +530,13 @@
       else radii.push(climb(k <= total / 2 ? (2 * k) / total : (2 * (total - k)) / total));
     }
     return radii;
+  }
+
+  // Where the k-th bird or bat is in its wingbeat, from 1 (wings up) to -1 (wings down).
+  // With no flap, all are drawn part way up.
+  function flapOf(move, k) {
+    if (!move.flap) return 0.5;
+    return Math.cos((TAU * k) / move.flap);
   }
 
   // How a stepped ring reads under a strobe that turns the wheel `step` radians per flash.
@@ -646,6 +660,7 @@
     shownValue,
     fieldInactive,
     steppedRadii,
+    flapOf,
     spiralReading,
     anchorRing,
     syncAnchors,

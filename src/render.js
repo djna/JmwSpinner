@@ -4,7 +4,7 @@
   'use strict';
 
   const { TAU } = root.JmwMaths;
-  const { wobbleOf, steppedRadii, leanStep } = root.JmwRecipe;
+  const { wobbleOf, steppedRadii, flapOf, leanStep } = root.JmwRecipe;
 
   const INK = '#1d1d24';
   const BOARD = '#fbfbf8';
@@ -97,6 +97,71 @@
     c.fill();
   }
 
+  // Cartoon flyers, drawn as outlines heading away from the centre. `size` is half the
+  // wingspan and `flap` where the wings are in their beat (1 up, -1 down). They are drawn
+  // in a local frame with the head towards -y and the wings along x.
+  function flyerAt(c, r, theta, size, width, flap, j, draw) {
+    c.save();
+    c.translate(r * Math.cos(theta), r * Math.sin(theta));
+    c.rotate(theta + Math.PI / 2 + j.tilt); // local -y now points away from the centre
+    c.scale(size * j.scale, size * j.scale);
+    c.lineWidth = (width * j.width) / (size * j.scale);
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    c.strokeStyle = INK;
+    c.beginPath();
+    draw(c, flap);
+    c.stroke();
+    c.restore();
+  }
+
+  // A gull: two curved wings meeting at the body, tips raised or lowered with the beat.
+  function drawBird(c, flap) {
+    const tip = -0.15 - 0.45 * flap; // wing tips: up (-y) at the top of the beat
+    const hump = -0.5 - 0.15 * flap;
+    c.moveTo(-1, tip);
+    c.quadraticCurveTo(-0.45, hump, 0, 0.05);
+    c.quadraticCurveTo(0.45, hump, 1, tip);
+  }
+
+  // A bat: head with ears, wings with a scalloped trailing edge, and a short tail. The
+  // wings rise and narrow a little at the top of the beat.
+  function drawBat(c, flap) {
+    const tipY = -0.2 - 0.35 * flap;
+    const tipX = 0.88 + 0.12 * flap;
+    const half = (side) => {
+      // Leading edge from the shoulder out to the tip, then back along three scallops.
+      c.quadraticCurveTo(side * 0.5, tipY - 0.25, side * tipX, tipY);
+      const end = [side * 0.12, 0.22];
+      for (let i = 1; i <= 3; i++) {
+        const x = side * tipX + (end[0] - side * tipX) * (i / 3);
+        const y = tipY + (end[1] - tipY) * (i / 3);
+        const px = side * tipX + (end[0] - side * tipX) * ((i - 0.5) / 3);
+        const py = tipY + (end[1] - tipY) * ((i - 0.5) / 3) - 0.14;
+        c.quadraticCurveTo(px, py, x, y);
+      }
+    };
+    c.moveTo(-0.1, -0.2);
+    c.lineTo(-0.14, -0.42); // left ear
+    c.lineTo(-0.04, -0.27);
+    c.lineTo(0.04, -0.27);
+    c.lineTo(0.14, -0.42); // right ear
+    c.lineTo(0.1, -0.2);
+    half(1);
+    c.lineTo(0, 0.34); // tail
+    c.lineTo(-0.12, 0.22);
+    // Left wing, traced back from the body to the shoulder.
+    for (let i = 2; i >= 0; i--) {
+      const x = -tipX + (-0.12 + tipX) * (i / 3);
+      const y = tipY + (0.22 - tipY) * (i / 3);
+      const px = -tipX + (-0.12 + tipX) * ((i + 0.5) / 3);
+      const py = tipY + (0.22 - tipY) * ((i + 0.5) / 3) - 0.14;
+      c.quadraticCurveTo(px, py, x, y);
+    }
+    c.quadraticCurveTo(-0.5, tipY - 0.25, -0.1, -0.2);
+    c.closePath();
+  }
+
   // A ring of short radial marks, evenly spaced, starting at the top (or at `phase`).
   // With wobble, each is slightly off in place, length, tilt and pen width.
   function drawMarkRing(c, move) {
@@ -135,6 +200,8 @@
       const r = radius + j.radial * move.size;
       if (move.shape === 'dot') dotAt(c, r, theta, move.size, j);
       else if (move.shape === 'mark') markAt(c, r, theta, 2 * move.size, move.width, j);
+      else if (move.shape === 'bird') flyerAt(c, r, theta, move.size, move.width, flapOf(move, k), j, drawBird);
+      else if (move.shape === 'bat') flyerAt(c, r, theta, move.size, move.width, flapOf(move, k), j, drawBat);
       else semicircleAt(c, r, theta, move.size, move.width, move.bulge, j);
     });
   }
