@@ -79,6 +79,10 @@
         <div class="buttons history">
           <button type="button" id="undo" title="Undo (⌘Z / Ctrl+Z)" disabled>↶ Undo</button>
           <button type="button" id="redo" title="Redo (⇧⌘Z / Ctrl+Y)" disabled>↷ Redo</button>
+          <button type="button" id="save" title="Save the setup to a file (⌘S / Ctrl+S)">Save…</button>
+          <button type="button" id="open" title="Open a saved setup (⌘O / Ctrl+O)">Open…</button>
+          <input type="file" id="open-file" accept=".json,application/json" hidden>
+          <span id="file-status" class="note" aria-live="polite"></span>
         </div>
         <ol id="moves"></ol>
       </fieldset>

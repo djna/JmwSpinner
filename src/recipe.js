@@ -279,6 +279,26 @@
     move.seed = newSeed();
   }
 
+  // Rebuild moves from saved data (e.g. a file), keeping their ids, seeds and any valid
+  // fields. Unknown move types and fields are skipped; missing fields keep their defaults.
+  // New moves made afterwards get ids above the loaded ones.
+  function movesFromSaved(saved) {
+    if (!Array.isArray(saved)) throw new Error('No list of moves found.');
+    const moves = [];
+    for (const data of saved) {
+      if (!data || !MOVE_TYPES[data.type] || !Number.isInteger(data.id)) continue;
+      const move = createMove(data.type);
+      move.id = data.id;
+      if (Number.isInteger(data.seed)) move.seed = data.seed;
+      for (const field of MOVE_TYPES[data.type].fields) {
+        if (field.key in data) setField(move, field.key, data[field.key]);
+      }
+      moves.push(move);
+      nextId = Math.max(nextId, move.id + 1);
+    }
+    return moves;
+  }
+
   // The starting recipe: a blank wheel, built up by adding moves.
   function defaultRecipe() {
     return { moves: [] };
@@ -495,6 +515,7 @@
     defaultRecipe,
     addMove,
     appendMove,
+    movesFromSaved,
     removeMove,
     shiftMove,
     attachedCircle,

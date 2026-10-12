@@ -487,10 +487,100 @@
   undoButton.addEventListener('click', () => restore(H.undo(history)));
   redoButton.addEventListener('click', () => restore(H.redo(history)));
 
+  // --- Save and open: the whole setup (recipe, rates, afterglow, solver choices) as a
+  // JSON file. Opening a file is a step that can be undone.
+
+  const FILE_FORMAT = 'jmwspinner';
+  const fileStatus = document.getElementById('file-status');
+  const openInput = document.getElementById('open-file');
+  const m1Box = document.getElementById('m1');
+  const m2Box = document.getElementById('m2');
+
+  function setupData() {
+    return {
+      format: FILE_FORMAT,
+      version: 1,
+      saved: new Date().toISOString(),
+      moves: recipe.moves,
+      spin: params.spin,
+      strobe: params.strobe,
+      afterglow: params.afterglow,
+      solver: { pair: pairChosen ? pair : null, m1: Number(m1Box.value), m2: Number(m2Box.value) },
+    };
+  }
+
+  function fileName() {
+    const t = new Date();
+    const two = (n) => String(n).padStart(2, '0');
+    return `jmwspinner-${t.getFullYear()}-${two(t.getMonth() + 1)}-${two(t.getDate())}-${two(t.getHours())}${two(t.getMinutes())}.json`;
+  }
+
+  // Use the browser's save dialog where there is one (Chrome, Edge), else a download.
+  async function saveSetup() {
+    const text = JSON.stringify(setupData(), null, 2);
+    try {
+      if (window.showSaveFilePicker) {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: fileName(),
+          types: [{ description: 'JmwSpinner setup', accept: { 'application/json': ['.json'] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(text);
+        await writable.close();
+        fileStatus.textContent = `Saved ${handle.name}.`;
+      } else {
+        const link = el('a', { href: URL.createObjectURL(new Blob([text], { type: 'application/json' })), download: fileName() });
+        link.click();
+        URL.revokeObjectURL(link.href);
+        fileStatus.textContent = `Saved ${link.download} to your downloads.`;
+      }
+    } catch (error) {
+      if (error.name !== 'AbortError') fileStatus.textContent = `Could not save: ${error.message}`;
+    }
+  }
+
+  function openSetup(text, name) {
+    let data;
+    try {
+      data = JSON.parse(text);
+      if (!data || data.format !== FILE_FORMAT) throw new Error('This is not a JmwSpinner setup file.');
+      recipe.moves = Rc.movesFromSaved(data.moves);
+    } catch (error) {
+      fileStatus.textContent = `Could not open ${name}: ${error.message}`;
+      return;
+    }
+    drawing = null;
+    if (Number.isFinite(data.spin)) setters.spin(data.spin);
+    if (Number.isFinite(data.strobe) && data.strobe > 0) setters.strobe(data.strobe);
+    if (Number.isFinite(data.afterglow)) setters.afterglow(data.afterglow);
+    const solver = data.solver || {};
+    pair = Array.isArray(solver.pair) ? solver.pair : null;
+    pairChosen = pair !== null;
+    if (Number.isFinite(solver.m1)) m1Box.value = solver.m1;
+    if (Number.isFinite(solver.m2)) m2Box.value = solver.m2;
+    recipeChanged();
+    remember();
+    fileStatus.textContent = `Opened ${name}.`;
+  }
+
+  document.getElementById('save').addEventListener('click', saveSetup);
+  document.getElementById('open').addEventListener('click', () => openInput.click());
+  openInput.addEventListener('change', async () => {
+    const file = openInput.files[0];
+    if (file) openSetup(await file.text(), file.name);
+    openInput.value = ''; // so the same file can be opened again
+  });
+
   // ⌘Z / Ctrl+Z to undo; ⇧⌘Z, ⇧Ctrl+Z or Ctrl+Y to redo. Left alone while typing in a
-  // number box, where the browser's own text undo applies.
+  // number box, where the browser's own text undo applies. ⌘S / ⌘O save and open.
   document.addEventListener('keydown', (event) => {
     if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+    if (event.key.toLowerCase() === 's' || event.key.toLowerCase() === 'o') {
+      event.preventDefault();
+      if (event.key.toLowerCase() === 's') saveSetup();
+      else openInput.click();
+      return;
+    }
     if (event.target.matches?.('input[type="number"]')) return;
     const key = event.key.toLowerCase();
     if (key === 'z' && !event.shiftKey) restore(H.undo(history));

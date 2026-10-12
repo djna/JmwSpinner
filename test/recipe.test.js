@@ -337,3 +337,31 @@ test('trail slows the apparent turn of a shape climbing anticlockwise', () => {
   R.setField(move, 'trail', 0);
   assert.ok(R.spiralReading(move, a + 0.05).lag === 0); // -0 is fine
 });
+
+test('saved moves load back with their ids, seeds, fields and links', () => {
+  const recipe = R.defaultRecipe();
+  const circle = R.addMove(recipe, 'circle');
+  const semis = R.addMove(recipe, 'semicircles');
+  R.setField(semis, 'attach', circle.id);
+  R.setField(semis, 'count', 14);
+  const saved = JSON.parse(JSON.stringify(recipe.moves));
+  saved.push({ id: 999, type: 'teleporter' }, null); // unknown and broken entries are skipped
+  saved[1].bulge = 'sideways'; // an invalid value keeps the default
+  saved[1].unknown = 5;
+
+  const loaded = R.movesFromSaved(saved);
+  assert.deepEqual(loaded.map((m) => m.id), [circle.id, semis.id]);
+  assert.equal(loaded[1].count, 14);
+  assert.equal(loaded[1].attach, circle.id);
+  assert.equal(loaded[1].seed, semis.seed);
+  assert.equal(loaded[1].bulge, 'in');
+  assert.ok(!('unknown' in loaded[1]));
+  assert.ok(R.createMove('marks').id > semis.id); // new ids don't clash
+  assert.throws(() => R.movesFromSaved({}), /No list of moves/);
+});
+
+test('loading moves with high ids keeps new ids above them', () => {
+  const loaded = R.movesFromSaved([{ id: 5000, type: 'marks' }]);
+  assert.equal(loaded[0].count, 12); // defaults fill in
+  assert.ok(R.createMove('marks').id > 5000);
+});
