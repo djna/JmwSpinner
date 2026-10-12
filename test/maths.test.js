@@ -34,3 +34,25 @@ test('aliasingRatio is 0 when stationary and 1 at half a spacing', () => {
   close(M.aliasingRatio(a, 8), 0);
   close(M.aliasingRatio(a / 2 - 1e-9, 8), 1);
 });
+
+test('opposingStep matches the worked example and gives equal and opposite drift', () => {
+  const s = M.opposingStep(12, 13);
+  close(s, 0.5034);
+  const d1 = M.apparentStep(s, 12);
+  const d2 = M.apparentStep(s, 13);
+  close(d1, -d2, 1e-12);
+  assert.ok(d1 < 0 && d2 > 0);
+});
+
+test('opposingStep with m = 2 skips two spacings per flash', () => {
+  const s = M.opposingStep(12, 13, 2, 2);
+  close(M.apparentStep(s, 12), -M.apparentStep(s, 13), 1e-12);
+  close(s, 2 * M.opposingStep(12, 13));
+});
+
+test('strobeRateFor and spinRateFor invert stepPerFlash', () => {
+  const s = M.opposingStep(12, 13);
+  close(M.strobeRateFor(s, 2.5), 31.2, 1e-9);
+  close(M.spinRateFor(s, 31.2), 2.5, 1e-9);
+  close(M.stepPerFlash(2.5, M.strobeRateFor(s, 2.5)), s, 1e-12);
+});

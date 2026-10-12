@@ -81,9 +81,27 @@ input[type="number"] {
 }
 
 button {
+  padding: 6px 14px;
+}
+
+fieldset > button,
+.buttons,
+.note {
   grid-column: 1 / -1;
   justify-self: start;
-  padding: 6px 14px;
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.note {
+  margin: 0;
+  max-width: 32em;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 #readout {

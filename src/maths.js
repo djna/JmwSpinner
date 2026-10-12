@@ -30,7 +30,33 @@
     return Math.abs(apparentStep(step, count)) / (markSpacing(count) / 2);
   }
 
-  const api = { TAU, stepPerFlash, markSpacing, apparentStep, aliasingRatio };
+  // The step per flash that makes two rings (count1, count2 marks) drift at equal speed
+  // in opposite directions. m1 and m2 are how many whole mark spacings each ring
+  // advances per flash before the leftover drift (usually both 1).
+  //   s = m1·a1 + d = m2·a2 − d   =>   s = π·(m1/N1 + m2/N2)
+  function opposingStep(count1, count2, m1 = 1, m2 = 1) {
+    return Math.PI * (m1 / count1 + m2 / count2);
+  }
+
+  // Rates that give a wanted step per flash, holding the other rate fixed.
+  function strobeRateFor(step, spinRate) {
+    return (TAU * spinRate) / step;
+  }
+
+  function spinRateFor(step, strobeRate) {
+    return (step * strobeRate) / TAU;
+  }
+
+  const api = {
+    TAU,
+    stepPerFlash,
+    markSpacing,
+    apparentStep,
+    aliasingRatio,
+    opposingStep,
+    strobeRateFor,
+    spinRateFor,
+  };
 
   if (typeof module === 'object' && module.exports) {
     module.exports = api;
