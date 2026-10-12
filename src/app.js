@@ -267,7 +267,7 @@
 
   // --- Drawing a circle: the wheel makes one slow turn under the pen.
 
-  const DRAW_SECONDS = 6;
+  const DRAW_SECONDS = 2;
   let drawing = null; // { id, start, progress } while a circle is being drawn
 
   function startDrawing(move) {
