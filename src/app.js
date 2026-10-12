@@ -1,9 +1,10 @@
-// JmwSpinner: two rings of marks, a static wheel view, a strobe view and a strobe solver.
+// JmwSpinner: an editable recipe of moves, a static wheel view, a strobe view and a strobe solver.
 (function () {
   'use strict';
 
   const M = window.JmwMaths;
   const R = window.JmwRender;
+  const Rc = window.JmwRecipe;
 
   const MAX_FLASHES_PER_FRAME = 64;
 
@@ -36,25 +37,99 @@
     setters[name] = set;
   }
 
-  // --- The drawing recipe, rebuilt from the controls.
+  // --- The drawing recipe: a list of moves, each edited through its own card.
 
-  const RINGS = [1, 2];
+  const recipe = Rc.defaultRecipe();
+  let pair = Rc.defaultPair(recipe); // ids of the two counted moves the solver uses
+  let pairChosen = false; // until the user picks, the pair follows the outermost and innermost
 
-  function ringCount(ring) {
-    return Math.max(1, Math.round(params[`count${ring}`]));
+  const movesList = document.getElementById('moves');
+
+  function el(tag, attrs = {}, text = '') {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+    if (text) node.textContent = text;
+    return node;
   }
 
-  function buildRecipe() {
-    return {
-      moves: RINGS.map((ring) => ({
-        type: 'marks',
-        count: ringCount(ring),
-        radius: params[`radius${ring}`],
-        length: 0.1,
-        width: 0.03,
-      })),
+  function moveName(move) {
+    return `${recipe.moves.indexOf(move) + 1}. ${Rc.MOVE_TYPES[move.type].label}`;
+  }
+
+  // The controls for one field: a label, then a slider and number box kept in sync
+  // (as in bindControl below), or a choice list.
+  function fieldControls(move, field) {
+    const id = `move${move.id}-${field.key}`;
+    const label = el('label', { for: id }, field.label);
+
+    if (field.options) {
+      const select = el('select', { id, class: 'wide' });
+      for (const [value, text] of field.options) select.append(el('option', { value }, text));
+      select.value = move[field.key];
+      select.addEventListener('change', () => {
+        if (Rc.setField(move, field.key, select.value)) redrawRecipe();
+      });
+      return [label, select];
+    }
+
+    const range = el('input', { type: 'range', id, min: field.min, max: field.max, step: field.step });
+    const box = el('input', { type: 'number', min: field.min, step: field.integer ? 1 : 'any' });
+    box.setAttribute('aria-label', field.label);
+    const show = () => {
+      range.value = move[field.key];
+      box.value = Number(move[field.key].toFixed(4));
     };
+    const set = (value) => {
+      if (Rc.setField(move, field.key, value)) redrawRecipe();
+      show();
+    };
+    range.addEventListener('input', () => set(range.value));
+    box.addEventListener('change', () => set(box.value));
+    show();
+    return [label, range, box];
   }
+
+  function moveCard(move, index) {
+    const card = el('li', { class: 'move' });
+    const head = el('div', { class: 'move-head' });
+    head.append(el('span', { class: 'move-name' }, moveName(move)));
+
+    const actions = [
+      ['↑', 'Move up', index === 0, () => Rc.shiftMove(recipe, move.id, -1)],
+      ['↓', 'Move down', index === recipe.moves.length - 1, () => Rc.shiftMove(recipe, move.id, 1)],
+      ['✕', 'Remove', false, () => Rc.removeMove(recipe, move.id)],
+    ];
+    for (const [symbol, title, disabled, act] of actions) {
+      const button = el('button', { type: 'button', title, 'aria-label': `${title}: ${moveName(move)}` }, symbol);
+      button.disabled = disabled;
+      button.addEventListener('click', () => {
+        act();
+        recipeChanged();
+      });
+      head.append(button);
+    }
+    card.append(head);
+
+    const fields = el('div', { class: 'move-fields' });
+    for (const field of Rc.MOVE_TYPES[move.type].fields) fields.append(...fieldControls(move, field));
+    card.append(fields);
+    return card;
+  }
+
+  // Rebuild the move cards after a move is added, removed or reordered.
+  function recipeChanged() {
+    movesList.replaceChildren(...recipe.moves.map(moveCard));
+    redrawRecipe();
+  }
+
+  const newMoveType = document.getElementById('new-move-type');
+  for (const [type, spec] of Object.entries(Rc.MOVE_TYPES)) {
+    newMoveType.append(el('option', { value: type }, spec.label));
+  }
+  document.getElementById('add-move').addEventListener('click', () => {
+    Rc.addMove(recipe, newMoveType.value);
+    recipeChanged();
+  });
 
   // --- Layers. `marks` holds the recipe in the wheel's frame; `ink` accumulates strobe flashes.
 
@@ -62,7 +137,6 @@
   let marks = null;
   let ink = null;
   let inkCtx = null;
-  let recipe = null;
 
   function rebuildLayers() {
     R.fitCanvas(wheelCanvas);
@@ -74,7 +148,6 @@
   }
 
   function redrawRecipe() {
-    recipe = buildRecipe();
     const marksCtx = marks.getContext('2d');
     marksCtx.clearRect(0, 0, size, size);
     R.drawRecipe(marksCtx, size, recipe);
@@ -83,6 +156,7 @@
     wheelCtx.clearRect(0, 0, wsize, wsize);
     R.drawBoard(wheelCtx, wsize);
     R.drawRecipe(wheelCtx, wsize, recipe); // fresh draw so it is crisp at this canvas's size
+    updatePairChoice();
     updateReadout();
   }
 
@@ -97,8 +171,8 @@
     return d > 0 ? 'turns clockwise (with the wheel)' : 'turns anticlockwise (against the wheel)';
   }
 
-  function describeRing(ring, s) {
-    const n = ringCount(ring);
+  function describeRing(move, s) {
+    const n = move.count;
     const a = M.markSpacing(n);
     const d = M.apparentStep(s, n);
     const ratio = M.aliasingRatio(s, n);
@@ -108,7 +182,7 @@
       warning = ` <span class="warn">Close to the aliasing limit (${fmt(ratio * 100, 0)}% of half a mark spacing): the direction will look ambiguous.</span>`;
     }
 
-    return `<p><b>Ring ${ring}</b> (${n} marks, ${fmt(deg(a))}° apart) appears to move
+    return `<p><b>${moveName(move)}</b> (${n} ${Rc.MOVE_TYPES[move.type].noun}, ${fmt(deg(a))}° apart) appears to move
       <b>${fmt(deg(d))}°</b> per flash, about <b>${fmt(deg(d) * params.strobe, 1)}°/s</b>,
       so it ${describeDirection(d)}.${warning}</p>`;
   }
@@ -117,30 +191,61 @@
     const s = M.stepPerFlash(params.spin, params.strobe);
     readout.innerHTML = `
       <p>The wheel turns <b>${fmt(deg(s))}°</b> between flashes (${fmt(M.TAU / s)} flashes per revolution).</p>
-      ${RINGS.map((ring) => describeRing(ring, s)).join('')}`;
+      ${Rc.countedMoves(recipe).map((move) => describeRing(move, s)).join('')}`;
   }
 
-  // --- Solver: pick rates so the two rings drift at equal speed in opposite directions.
+  // --- Solver: pick rates so rings A and B drift at equal speed in opposite directions.
 
   const solverNote = document.getElementById('solver-note');
+  const ringChoice = [document.getElementById('ring-a'), document.getElementById('ring-b')];
+  const solveButtons = [document.getElementById('solve-strobe'), document.getElementById('solve-spin')];
+  const SOLVER_HINT = solverNote.textContent;
+  const NEEDS_PAIR = 'Needs at least two rings of marks or semicircles.';
 
-  function solvedStep() {
-    const m1 = Math.max(1, Math.round(Number(document.getElementById('m1').value) || 1));
-    const m2 = Math.max(1, Math.round(Number(document.getElementById('m2').value) || 1));
-    return { s: M.opposingStep(ringCount(1), ringCount(2), m1, m2), m1, m2 };
+  // Refresh the ring A/B choice lists, keeping a pair the user chose while it is still valid.
+  function updatePairChoice() {
+    pair = pairChosen ? Rc.resolvePair(recipe, pair) : Rc.defaultPair(recipe);
+    const counted = Rc.countedMoves(recipe);
+    ringChoice.forEach((select, i) => {
+      select.replaceChildren(
+        ...counted.map((move) =>
+          el('option', { value: move.id }, `${moveName(move)} (${move.count})`),
+        ),
+      );
+      select.disabled = !pair;
+      if (pair) select.value = pair[i];
+    });
+    for (const button of solveButtons) button.disabled = !pair;
+    if (!pair) solverNote.textContent = NEEDS_PAIR;
+    else if (solverNote.textContent === NEEDS_PAIR) solverNote.textContent = SOLVER_HINT;
   }
 
+  // Choosing the ring already picked for the other slot swaps the two.
+  ringChoice.forEach((select, i) => {
+    select.addEventListener('change', () => {
+      const chosen = Number(select.value);
+      const other = pair[1 - i];
+      const next = [...pair];
+      next[i] = chosen;
+      if (chosen === other) next[1 - i] = pair[i];
+      pair = next;
+      pairChosen = true;
+      updatePairChoice();
+    });
+  });
+
   function solve(target) {
-    const { s, m1, m2 } = solvedStep();
+    const [a, b] = pair.map((id) => recipe.moves.find((m) => m.id === id));
+    const m1 = Math.max(1, Math.round(Number(document.getElementById('m1').value) || 1));
+    const m2 = Math.max(1, Math.round(Number(document.getElementById('m2').value) || 1));
+    const s = M.opposingStep(a.count, b.count, m1, m2);
     if (target === 'strobe') setters.strobe(M.strobeRateFor(s, params.spin));
     else setters.spin(M.spinRateFor(s, params.strobe));
 
-    const n1 = ringCount(1);
-    const n2 = ringCount(2);
-    const opposite = Math.abs(M.apparentStep(s, n1) + M.apparentStep(s, n2)) < 1e-9;
+    const opposite = Math.abs(M.apparentStep(s, a.count) + M.apparentStep(s, b.count)) < 1e-9;
     solverNote.textContent = opposite
       ? `Solved for ${target === 'strobe' ? 'strobe rate' : 'spin rate'} with ${m1} and ${m2} spacing${m1 === 1 && m2 === 1 ? '' : 's'} per flash.`
-      : `These skip counts (${m1}, ${m2}) push a ring past its aliasing limit for ${n1} and ${n2} marks, so the drift won't be equal and opposite. Try smaller values.`;
+      : `These skip counts (${m1}, ${m2}) push a ring past its aliasing limit for ${a.count} and ${b.count}, so the drift won't be equal and opposite. Try smaller values.`;
   }
 
   // --- Strobe loop. The wheel angle is integrated over time so changing the spin rate
@@ -189,10 +294,6 @@
 
   // --- Wiring.
 
-  for (const ring of RINGS) {
-    bindControl(`count${ring}`, redrawRecipe);
-    bindControl(`radius${ring}`, redrawRecipe);
-  }
   bindControl('spin', updateReadout);
   bindControl('strobe', () => {
     if (lastTime !== null) nextFlash = Math.min(nextFlash, lastTime + 1 / params.strobe);
@@ -212,6 +313,7 @@
 
   window.addEventListener('resize', rebuildLayers);
 
+  movesList.replaceChildren(...recipe.moves.map(moveCard));
   rebuildLayers();
   requestAnimationFrame(frame);
 })();

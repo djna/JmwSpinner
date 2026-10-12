@@ -74,8 +74,39 @@
     c.stroke();
   }
 
+  // A full circle in one wide pen stroke, like the stroke drawn while the wheel turns.
+  function drawSolidCircle(c, move) {
+    c.lineWidth = move.width;
+    c.strokeStyle = INK;
+    c.beginPath();
+    c.arc(0, 0, move.radius, 0, TAU);
+    c.stroke();
+  }
+
+  // A ring of small semicircles, evenly spaced, starting at the top. Each one's flat side
+  // lies along the ring and its curve bulges towards the centre or towards the rim.
+  function drawSemicircleRing(c, move) {
+    const spacing = TAU / move.count;
+    const turn = move.bulge === 'in' ? Math.PI / 2 : -Math.PI / 2;
+    c.lineWidth = move.width;
+    c.lineCap = 'round';
+    c.strokeStyle = INK;
+    c.beginPath();
+    for (let k = 0; k < move.count; k++) {
+      const theta = k * spacing - Math.PI / 2;
+      const x = move.radius * Math.cos(theta);
+      const y = move.radius * Math.sin(theta);
+      const start = theta + turn;
+      c.moveTo(x + move.size * Math.cos(start), y + move.size * Math.sin(start));
+      c.arc(x, y, move.size, start, start + Math.PI);
+    }
+    c.stroke();
+  }
+
   const MOVES = {
+    circle: drawSolidCircle,
     marks: drawMarkRing,
+    semicircles: drawSemicircleRing,
   };
 
   // Draw every move in the recipe, in the wheel's own frame.

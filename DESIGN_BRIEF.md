@@ -13,8 +13,8 @@ Simple trunk model: `main` is the trunk, with short-lived branches for specific 
 ## Roadmap (agreed order of slices)
 
 1. **First slice** (done, `feature/first-slice`): one ring of marks, wheel and strobe views, spin/strobe/afterglow controls, strobe maths readout.
-2. **Second ring and strobe solver** (`feature/second-ring`): two rings, and solving the strobe rate (keeping spin) or the spin rate (keeping strobe) for equal and opposite drift, with the skip counts `m1`, `m2` adjustable.
-3. **More moves and an editable recipe**: solid circle, ring of semicircles; add, remove and reorder moves.
+2. **Second ring and strobe solver** (done, `feature/second-ring`): two rings, and solving the strobe rate (keeping spin) or the spin rate (keeping strobe) for equal and opposite drift, with the skip counts `m1`, `m2` adjustable.
+3. **More moves and an editable recipe** (`feature/more-moves`): solid circle, ring of semicircles; add, remove and reorder moves. The solver works on any two counted rings (rings A and B), defaulting to the outermost and innermost.
 4. **Stepped ring**: out-only and loop-back, with the spiral-direction indicator.
 5. **Snapping and ghost guides.**
 6. **Later**: guided step-by-step recipe, then freehand strokes.
