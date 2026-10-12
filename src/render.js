@@ -4,7 +4,7 @@
   'use strict';
 
   const { TAU } = root.JmwMaths;
-  const { wobbleOf, steppedRadii } = root.JmwRecipe;
+  const { wobbleOf, steppedRadii, leanStep } = root.JmwRecipe;
 
   const INK = '#1d1d24';
   const BOARD = '#fbfbf8';
@@ -139,6 +139,38 @@
     });
   }
 
+  // A ring of triangular wings: base on the ring, point outward, each leaning a further
+  // step (leanStep) from the one before, starting straight out at the top. Anchored wings
+  // follow their anchor's shapes, including its wobble.
+  function drawWingRing(c, move) {
+    const spacing = TAU / move.count;
+    const lean = leanStep(move);
+    c.fillStyle = INK;
+    c.strokeStyle = INK;
+    c.lineJoin = 'round';
+    for (let k = 0; k < move.count; k++) {
+      const j = wobbleOf(move, k);
+      const place = move.anchorWobble ? wobbleOf(move.anchorWobble, k) : j;
+      const theta = (k + place.angle) * spacing + (move.phase || 0) - Math.PI / 2;
+      const point = theta + k * lean + j.tilt; // the direction the wing points
+      const bx = move.radius * Math.cos(theta);
+      const by = move.radius * Math.sin(theta);
+      const length = move.length * j.scale;
+      const half = (move.base / 2) * j.squash;
+      c.beginPath();
+      c.moveTo(bx + length * Math.cos(point), by + length * Math.sin(point));
+      c.lineTo(bx - half * Math.sin(point), by + half * Math.cos(point));
+      c.lineTo(bx + half * Math.sin(point), by - half * Math.cos(point));
+      c.closePath();
+      if (move.fill === 'outline') {
+        c.lineWidth = move.width * j.width;
+        c.stroke();
+      } else {
+        c.fill();
+      }
+    }
+  }
+
   // A circle in one wide pen stroke, drawn by turning the wheel under a pen held at the top.
   // `sweep` (0..1, default 1) is how much of a turn has passed under the pen so far: the
   // newest ink is at the pen, and older ink has turned clockwise away from it. Any nibble
@@ -218,6 +250,7 @@
     marks: drawMarkRing,
     semicircles: drawSemicircleRing,
     stepped: drawSteppedRing,
+    wings: drawWingRing,
     nibbles: () => {}, // drawn as holes in their circle (see drawSolidCircle)
   };
 

@@ -185,8 +185,18 @@
     if (!Rc.attachedCircle(recipe, draft)) Rc.setField(draft, 'attach', null); // its circle was removed
     if (!Rc.alignedRing(recipe, draft)) Rc.setField(draft, 'align', null);
     if (draft.type === 'stepped' && !Rc.startRing(recipe, draft)) Rc.setField(draft, 'from', null);
-    if (draft.type === 'nibbles' && draft.attach === null) {
-      // Nibbles only show in a circle, so start them on the most recent one.
+    if (draft.type === 'wings') {
+      if (!Rc.anchorRing(recipe, draft)) Rc.setField(draft, 'anchor', null);
+      if (draft.anchor === null) {
+        // Wings usually sit on semicircles, so start them on the most recent ring of them.
+        const rings = recipe.moves.filter((m) => m.type === 'semicircles');
+        if (rings.length) Rc.setField(draft, 'anchor', rings[rings.length - 1].id);
+      }
+      Rc.syncAnchors({ moves: [...recipe.moves, draft] });
+    }
+    if ((draft.type === 'nibbles' || draft.type === 'semicircles') && draft.attach === null) {
+      // Nibbles only show in a circle, and semicircles usually sit on one, so start them on
+      // the most recent circle.
       const circles = recipe.moves.filter((m) => m.type === 'circle');
       if (circles.length) Rc.setField(draft, 'attach', circles[circles.length - 1].id);
     }
@@ -234,7 +244,7 @@
 
   // Redraw after any recipe change: the drawing, the move cards, the solver and the readout.
   function redrawRecipe() {
-    redrawDrawing();
+    redrawDrawing(); // (syncs anchored counts first, so the cards and readout see them)
     for (const sync of syncs) sync();
     updatePairChoice();
     updateReadout();
@@ -243,6 +253,7 @@
   // Redraw the marks layer and the wheel view. While a circle is being drawn, the wheel
   // view turns under a pen held at the top and the circle is only partly there.
   function redrawDrawing() {
+    Rc.syncAnchors(recipe); // anchored wings take their anchor's count
     const drawn = Rc.resolve(recipe);
     let angle = 0;
     let pen = null;
@@ -306,7 +317,16 @@
 
     return `<p><b>${moveName(move)}</b> (${n} ${Rc.MOVE_TYPES[move.type].noun}, ${fmt(deg(a))}° apart) appears to move
       <b>${fmt(deg(d))}°</b> per flash, about <b>${fmt(deg(d) * params.strobe, 1)}°/s</b>,
-      so it ${describeDirection(d)}.${move.type === 'stepped' ? describeSpiral(move, s) : ''}${warning}</p>`;
+      so it ${describeDirection(d)}.${move.type === 'stepped' ? describeSpiral(move, s) : ''}${move.type === 'wings' ? describeWings(move, s) : ''}${warning}</p>`;
+  }
+
+  // How fast each wing seems to spin as it travels round.
+  function describeWings(move, s) {
+    const spin = deg(Rc.wingSpin(move, s));
+    if (Math.abs(spin) < 0.05) return ' Each wing keeps its direction.';
+    const way = spin > 0 ? 'clockwise' : 'anticlockwise';
+    const warn = Math.abs(spin) > 150 ? ' <span class="warn">That is close to half a turn per flash, so the spin direction will look ambiguous.</span>' : '';
+    return ` Each wing seems to spin <b>${fmt(Math.abs(spin), 1)}°</b> ${way} per flash, about <b>${fmt((Math.abs(spin) * params.strobe) / 360)} rev/s</b>.${warn}`;
   }
 
   const SPIRAL_READINGS = {
