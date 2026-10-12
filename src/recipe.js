@@ -95,14 +95,9 @@
     return true;
   }
 
-  // The starting recipe: the two rings from the worked example in the brief.
+  // The starting recipe: a blank wheel, built up by adding moves.
   function defaultRecipe() {
-    return {
-      moves: [
-        createMove('marks', { count: 12, radius: 0.8 }),
-        createMove('marks', { count: 13, radius: 0.5 }),
-      ],
-    };
+    return { moves: [] };
   }
 
   function addMove(recipe, type) {

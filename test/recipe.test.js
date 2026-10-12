@@ -2,14 +2,18 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const R = require('../src/recipe.js');
 
-const types = (recipe) => recipe.moves.map((m) => m.type);
 const ids = (recipe) => recipe.moves.map((m) => m.id);
 
-test('the default recipe is the 12 and 13 mark rings from the brief', () => {
-  const recipe = R.defaultRecipe();
-  assert.deepEqual(types(recipe), ['marks', 'marks']);
-  assert.deepEqual(recipe.moves.map((m) => [m.count, m.radius]), [[12, 0.8], [13, 0.5]]);
+test('the default recipe is a blank wheel', () => {
+  assert.deepEqual(R.defaultRecipe().moves, []);
 });
+
+// The two rings from the worked example in the brief.
+function twoRings() {
+  return {
+    moves: [R.createMove('marks', { count: 12, radius: 0.8 }), R.createMove('marks', { count: 13, radius: 0.5 })],
+  };
+}
 
 test('every move type creates a move with its defaults and a unique id', () => {
   const made = Object.keys(R.MOVE_TYPES).map((type) => R.createMove(type));
@@ -42,7 +46,7 @@ test('values above the slider range are kept (the number box can exceed it)', ()
 });
 
 test('add, remove and reorder moves', () => {
-  const recipe = R.defaultRecipe();
+  const recipe = twoRings();
   const [a, b] = ids(recipe);
   const c = R.addMove(recipe, 'circle').id;
   assert.deepEqual(ids(recipe), [a, b, c]);
@@ -79,7 +83,7 @@ test('the default solver pair is the outermost and innermost counted moves', () 
 });
 
 test('a chosen pair is kept while valid, and falls back to the default otherwise', () => {
-  const recipe = R.defaultRecipe();
+  const recipe = twoRings();
   const s = R.addMove(recipe, 'semicircles').id;
   const [a, b] = ids(recipe);
   assert.deepEqual(R.resolvePair(recipe, [s, a]), [s, a]);
@@ -89,7 +93,7 @@ test('a chosen pair is kept while valid, and falls back to the default otherwise
 });
 
 test('an attached semicircle ring sits on the inner or outer edge of its circle', () => {
-  const recipe = R.defaultRecipe();
+  const recipe = twoRings();
   const circle = R.addMove(recipe, 'circle');
   R.setField(circle, 'radius', 0.8);
   R.setField(circle, 'width', 0.1);
@@ -112,7 +116,7 @@ test('an attached semicircle ring sits on the inner or outer edge of its circle'
 });
 
 test('removing a circle detaches the moves attached to it', () => {
-  const recipe = R.defaultRecipe();
+  const recipe = twoRings();
   const circle = R.addMove(recipe, 'circle');
   const semi = R.addMove(recipe, 'semicircles');
   R.setField(semi, 'attach', circle.id);
