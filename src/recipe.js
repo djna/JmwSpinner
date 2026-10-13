@@ -135,14 +135,14 @@
     },
     // Shapes at the ring's positions, stepping in radius from one to the next, so the still
     // wheel shows a coil and the strobe makes it move in or out. The pattern can run over
-    // several turns, giving `count × turns` shapes (see steppedRadii).
+    // any number of turns, whole or not, giving about `count × turns` shapes (see steppedTotal).
     stepped: {
       label: 'Stepped ring',
       noun: 'positions',
       counted: true,
       fields: [
         COUNT,
-        { key: 'turns', label: 'Turns', min: 1, max: 24, step: 1, integer: true },
+        { key: 'turns', label: 'Turns', min: 0.25, max: 24, step: 0.25 },
         {
           key: 'pattern',
           label: 'Pattern',
@@ -532,12 +532,19 @@
     return false;
   }
 
-  // The radius of each shape in a stepped ring, in order round the wheel: `count × turns`
+  // How many shapes a stepped ring has: one per position for each turn, rounded, so turns
+  // need not be whole (1.25 turns of 16 positions is 20 shapes, the last 4 sharing a
+  // position with the first 4, further out).
+  function steppedTotal(move) {
+    return Math.max(1, Math.round(move.count * move.turns));
+  }
+
+  // The radius of each shape in a stepped ring, in order round the wheel: steppedTotal
   // shapes climbing from inner to outer radius. Out only climbs all the way, then jumps
   // back (a seam). Out and back climbs for the first half and comes back for the second,
-  // so the last shape leads smoothly into the first.
+  // so over whole turns the last shape leads smoothly into the first.
   function steppedRadii(move) {
-    const total = move.count * move.turns;
+    const total = steppedTotal(move);
     const climb = (u) => move.inner + (move.outer - move.inner) * u;
     const radii = [];
     for (let k = 0; k < total; k++) {
@@ -678,6 +685,7 @@
     steppedRadii,
     flapOf,
     spiralReading,
+    steppedTotal,
     anchorRing,
     syncAnchors,
     wingsRadius,

@@ -252,6 +252,19 @@ test('stepped radii: two turns give count × 2 shapes, a full turn out and a ful
   near(R.steppedRadii(move), [0.2, 0.3, 0.4, 0.5, 0.6, 0.5, 0.4, 0.3]);
 });
 
+test('stepped radii: turns need not be whole', () => {
+  // 1¼ turns of 16 positions: 20 shapes, the last 4 on the same positions as the first 4.
+  const move = R.createMove('stepped', { count: 16, turns: 1.25, pattern: 'out', inner: 0.55, outer: 0.95 });
+  assert.equal(R.steppedTotal(move), 20);
+  const radii = R.steppedRadii(move);
+  assert.equal(radii.length, 20);
+  near([radii[0], radii[19]], [0.55, 0.95]);
+  assert.equal(R.spiralReading(move, (2 * Math.PI) / 16).flashes, 19);
+  R.setField(move, 'turns', 0.1);
+  assert.equal(move.turns, 0.25); // a quarter turn at least
+  assert.equal(R.steppedTotal(move), 4);
+});
+
 test('a stepped ring spirals in or out depending on the skip count and climb direction', () => {
   const move = R.createMove('stepped', { count: 12, pattern: 'out', climb: 'cw' });
   const a = (2 * Math.PI) / 12;

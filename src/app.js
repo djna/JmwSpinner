@@ -364,7 +364,7 @@
   function describeSpiral(move, s) {
     const drawn = Rc.resolve(recipe).moves.find((m) => m.id === move.id); // inner radius worked out
     const { reading, skip, strain, flashes, lag } = Rc.spiralReading(drawn, s);
-    const shapes = move.count * move.turns;
+    const shapes = Rc.steppedTotal(move);
     const why = reading === 'still' ? '' : ` (the wheel skips ${Math.abs(skip)} spacing${Math.abs(skip) === 1 ? '' : 's'} per flash)`;
     let text = ` With its ${shapes} shapes it ${SPIRAL_READINGS[reading]}${why}.`;
     if (reading !== 'still') text += ` ${describeFlight(move, s, flashes, lag)}`;
