@@ -28,13 +28,16 @@
   // Hand-drawn imperfection for moves drawn shape by shape (see wobbleOf). A solid circle
   // has none: the pen is held still while the wheel turns, so it comes out true.
   const WOBBLE = { key: 'wobble', label: 'Wobble', min: 0, max: 1, step: 0.05 };
+  // The ink a move is drawn in, as #rrggbb. Nibbles have none: they cut ink away.
+  const INK = '#1d1d24';
+  const COLOUR = { key: 'colour', label: 'Colour', colour: true };
 
   const MOVE_TYPES = {
     circle: {
       label: 'Solid circle',
       counted: false,
-      fields: [RADIUS, { key: 'width', label: 'Pen width', min: 0.005, max: 0.3, step: 0.005 }],
-      defaults: { radius: 0.9, width: 0.08 },
+      fields: [RADIUS, { key: 'width', label: 'Pen width', min: 0.005, max: 0.3, step: 0.005 }, COLOUR],
+      defaults: { radius: 0.9, width: 0.08, colour: INK },
     },
     marks: {
       label: 'Ring of marks',
@@ -48,8 +51,9 @@
         ALIGN,
         OFFSET,
         WOBBLE,
+        COLOUR,
       ],
-      defaults: { count: 12, radius: 0.8, length: 0.1, width: 0.03, align: null, offset: 0, wobble: 0.3 },
+      defaults: { count: 12, radius: 0.8, length: 0.1, width: 0.03, align: null, offset: 0, wobble: 0.3, colour: INK },
       wobbly: true,
     },
     semicircles: {
@@ -74,6 +78,7 @@
         ALIGN,
         OFFSET,
         WOBBLE,
+        COLOUR,
       ],
       defaults: {
         count: 13,
@@ -86,6 +91,7 @@
         align: null,
         offset: 0,
         wobble: 0.3,
+        colour: INK,
       },
       wobbly: true,
     },
@@ -188,6 +194,7 @@
         // spacing at the outer radius, as if thrown from the inner end.
         { key: 'trail', label: 'Trail', min: -3, max: 3, step: 0.05, signed: true },
         WOBBLE,
+        COLOUR,
       ],
       defaults: {
         count: 13,
@@ -207,6 +214,7 @@
         offset: 0,
         trail: 0,
         wobble: 0.3,
+        colour: INK,
       },
       wobbly: true,
     },
@@ -247,6 +255,7 @@
         ALIGN,
         OFFSET,
         WOBBLE,
+        COLOUR,
       ],
       defaults: {
         anchor: null,
@@ -262,6 +271,7 @@
         align: null,
         offset: 0,
         wobble: 0.2,
+        colour: INK,
       },
       wobbly: true,
     },
@@ -292,6 +302,11 @@
       const id = value === null || value === '' ? null : Number(value);
       if (id !== null && (!Number.isInteger(id) || id === move.id)) return false;
       move[key] = id;
+      return true;
+    }
+    if (field.colour) {
+      if (typeof value !== 'string' || !/^#[0-9a-f]{6}$/i.test(value)) return false;
+      move[key] = value.toLowerCase();
       return true;
     }
     if (field.options) {
@@ -641,6 +656,7 @@
   }
 
   const api = {
+    INK,
     MOVE_TYPES,
     createMove,
     setField,
