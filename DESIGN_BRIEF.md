@@ -20,8 +20,9 @@ Simple trunk model: `main` is the trunk, with short-lived branches for specific 
 6. **Ring of wings** (done, `feature/wings`): triangular wings, base on an anchor (by default the top of each semicircle in a ring, taking that ring's count, positions and wobble) and point outward. The top wing points straight out; each next one round the ring leans a further `spins × 360°/N`, by default against the ring (with 12, 1 o'clock leans 30° left, 11 o'clock 30° right), so on the still wheel they are all parallel and under the strobe each seems to spin. Options: lean with the ring, spins (0 = all straight out), length, base width, gap, filled or outline, wobble. The readout gives each wing's apparent spin per flash. Also: new semicircle rings default to the latest circle's outer edge, bulging to the rim.
 7. **Birds and bats** (done, `feature/birds`): the stepped ring can draw cartoon outline birds (gulls) or bats instead of dots, heading away from the centre. Neighbours in the sequence are drawn at successive points of a wingbeat (Flap: drawings per beat), so under the strobe they flap as they fly; the readout gives the flap rate and warns when too few drawings per beat make it jumbled.
 8. **Colour** (done, `feature/colour`): each drawing move has its own colour (nibbles have none, since they cut ink away). Colour changes from one shape to the next in a sequence would flicker if abrupt; gradual changes (e.g. dots shifting colour as they fly out) could work like the flapping, and are a possible next step.
-9. **Snapping and ghost guides** (postponed).
-10. **Later**: guided step-by-step recipe, then freehand strokes.
+9. **Fractional turns** (`feature/fractional-turns`): a stepped ring's turns need not be whole (quarter steps on the slider, any value in the box), giving `round(count × turns)` shapes; the extra shapes share positions with the first ones, further out. Prompted by a photo of the artist's thrown dots: about 16 positions, 1¼ turns out only, from just outside the central pattern (about 0.55 of the radius) to near the rim (about 0.95), big dots, and a flight of about 1.5 s, which needs about 13 flashes/s and a spin of about 0.83 rev/s (one spacing skipped per flash).
+10. **Snapping and ghost guides** (postponed).
+11. **Later**: guided step-by-step recipe, then freehand strokes.
 
 ## Goal
 
