@@ -47,6 +47,48 @@
     return (step * strobeRate) / TAU;
   }
 
+  // How many flashes land in one revolution of the wheel. With this fixed, the pattern of
+  // motion stays the same and the spin rate only sets how fast it plays.
+  function flashesPerRev(spinRate, strobeRate) {
+    return strobeRate / spinRate;
+  }
+
+  // How far a ring of `count` marks seems to move per flash, as a fraction of its mark
+  // spacing (-0.5 .. +0.5): count ÷ flashesPerRev less the nearest whole number.
+  // Positive is with the wheel, negative against it.
+  function driftFraction(perRev, count) {
+    return apparentStep(TAU / perRev, count) / markSpacing(count);
+  }
+
+  // Bands of drift per flash (fraction of a spacing) used to describe and suggest counts.
+  const DRIFT_BANDS = [
+    { key: 'still', max: 0.005 },
+    { key: 'slow', max: 0.1 },
+    { key: 'steady', max: 0.2 },
+    { key: 'fast', max: 0.3 },
+    { key: 'unclear', max: 0.4 },
+    { key: 'ambiguous', max: 0.5 },
+  ];
+
+  function driftBand(fraction) {
+    const f = Math.abs(fraction);
+    return DRIFT_BANDS.find((band) => f <= band.max + 1e-9).key;
+  }
+
+  // Counts from `min` to `max` sorted by how they move at `perRev` flashes per revolution:
+  // { still: [..], slow: { with: [..], against: [..] }, steady: .., fast: .., unclear: [..], ambiguous: [..] }.
+  function countGuide(perRev, min = 3, max = 48) {
+    const guide = { still: [], unclear: [], ambiguous: [] };
+    for (const key of ['slow', 'steady', 'fast']) guide[key] = { with: [], against: [] };
+    for (let n = min; n <= max; n++) {
+      const f = driftFraction(perRev, n);
+      const band = driftBand(f);
+      if (Array.isArray(guide[band])) guide[band].push(n);
+      else guide[band][f > 0 ? 'with' : 'against'].push(n);
+    }
+    return guide;
+  }
+
   const api = {
     TAU,
     stepPerFlash,
@@ -56,6 +98,10 @@
     opposingStep,
     strobeRateFor,
     spinRateFor,
+    flashesPerRev,
+    driftFraction,
+    driftBand,
+    countGuide,
   };
 
   if (typeof module === 'object' && module.exports) {

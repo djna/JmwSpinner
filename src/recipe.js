@@ -53,7 +53,7 @@
         WOBBLE,
         COLOUR,
       ],
-      defaults: { count: 12, radius: 0.8, length: 0.1, width: 0.03, align: null, offset: 0, wobble: 0.3, colour: INK },
+      defaults: { count: 11, radius: 0.8, length: 0.1, width: 0.03, align: null, offset: 0, wobble: 0.3, colour: INK },
       wobbly: true,
     },
     semicircles: {

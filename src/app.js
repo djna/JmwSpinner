@@ -16,6 +16,7 @@
 
   // --- Controls: each range slider is paired with a number box and kept in sync.
   // The number box can hold values beyond the slider's range (e.g. from the solver).
+  // onChange is told whether the user made the change or the code did (solver, undo, open).
 
   const params = {};
   const setters = {};
@@ -23,16 +24,17 @@
   function bindControl(name, onChange) {
     const range = document.getElementById(name);
     const box = document.getElementById(`${name}-num`);
-    const set = (value) => {
+    const update = (value, byUser) => {
       const v = Number(value);
       if (!Number.isFinite(v)) return;
       range.value = v;
       box.value = Number(v.toFixed(4));
       params[name] = v;
-      onChange();
+      onChange(byUser);
     };
-    range.addEventListener('input', () => set(range.value));
-    box.addEventListener('change', () => set(box.value));
+    const set = (value) => update(value, false);
+    range.addEventListener('input', () => update(range.value, true));
+    box.addEventListener('change', () => update(box.value, true));
     params[name] = Number(range.value);
     box.value = range.value;
     setters[name] = set;
@@ -311,25 +313,46 @@
   const deg = (rad) => (rad * 180) / Math.PI;
   const fmt = (x, digits = 2) => x.toFixed(digits);
 
-  function describeDirection(d) {
-    if (Math.abs(d) < 1e-9) return 'stands still';
-    return d > 0 ? 'turns clockwise (with the wheel)' : 'turns anticlockwise (against the wheel)';
+  const BAND_WORDS = { slow: 'slowly', steady: 'steadily', fast: 'fast', unclear: 'fast', ambiguous: 'fast' };
+
+  // A fraction of a spacing, as 1/k when it is close to one.
+  function spacingFraction(f) {
+    const k = Math.round(1 / Math.abs(f));
+    const nice = k >= 2 && k <= 100 && Math.abs(1 / Math.abs(f) - k) < 0.02 * k;
+    return nice ? `1/${k}` : fmt(Math.abs(f), 3);
+  }
+
+  // How a counted ring moves: count ÷ flashes per revolution, less the nearest whole
+  // number, is how far it seems to move per flash as a fraction of its spacing.
+  function describeMotion(move, s) {
+    const n = move.count;
+    const d = M.apparentStep(s, n);
+    if (s === 0) return 'stands still, because the wheel is not spinning';
+    const perRev = M.TAU / s;
+    const f = M.driftFraction(perRev, n);
+    const band = M.driftBand(f);
+    const sum = `${n} ÷ ${fmt(perRev)} = ${fmt(n / perRev, 3)}`;
+    if (band === 'still') return `${sum}, a whole number, so it <b>stands still</b>`;
+    const way = d > 0 ? 'with the wheel</b> (clockwise)' : 'against the wheel</b> (anticlockwise)';
+    const pass = 1 / (Math.abs(f) * params.strobe);
+    return `${sum}, so it moves <b>${BAND_WORDS[band]} ${way}, ${spacingFraction(f)} of a spacing
+      (${fmt(Math.abs(deg(d)))}°) per flash. Each takes <b>${fmt(pass)} s</b> to reach its neighbour's place`;
   }
 
   function describeRing(move, s) {
     const n = move.count;
     const a = M.markSpacing(n);
-    const d = M.apparentStep(s, n);
-    const ratio = M.aliasingRatio(s, n);
+    const band = s === 0 ? 'still' : M.driftBand(M.driftFraction(M.TAU / s, n));
 
     let warning = '';
-    if (ratio > 0.8) {
-      warning = ` <span class="warn">Close to the aliasing limit (${fmt(ratio * 100, 0)}% of half a mark spacing): the direction will look ambiguous.</span>`;
+    if (band === 'ambiguous') {
+      warning = ' <span class="warn">That is close to half a spacing per flash, so the direction will look ambiguous.</span>';
+    } else if (band === 'unclear') {
+      warning = ' <span class="warn">At over 0.3 of a spacing per flash the direction may be hard to read.</span>';
     }
 
-    return `<p><b>${moveName(move)}</b> (${n} ${Rc.MOVE_TYPES[move.type].noun}, ${fmt(deg(a))}° apart) appears to move
-      <b>${fmt(deg(d))}°</b> per flash, about <b>${fmt(deg(d) * params.strobe, 1)}°/s</b>,
-      so it ${describeDirection(d)}.${move.type === 'stepped' ? describeSpiral(move, s) : ''}${move.type === 'wings' ? describeWings(move, s) : ''}${warning}</p>`;
+    return `<p><b>${moveName(move)}</b> (${n} ${Rc.MOVE_TYPES[move.type].noun}, ${fmt(deg(a))}° apart):
+      ${describeMotion(move, s)}.${move.type === 'stepped' ? describeSpiral(move, s) : ''}${move.type === 'wings' ? describeWings(move, s) : ''}${warning}</p>`;
   }
 
   // How fast each wing seems to spin as it travels round.
@@ -385,11 +408,61 @@
     return text;
   }
 
+  // Whether the screen can show the strobe as described: it shows only so many frames a
+  // second, and a strobe rate that divides evenly into that lands the same way every frame.
+  function describeScreen(perRev) {
+    if (screenRate === null) return '';
+    const shown = `Your screen shows about ${screenRate} frames a second`;
+    if (params.strobe > screenRate * 1.02) {
+      return ` <span class="warn">${shown}, fewer than the ${fmt(params.strobe, 1)} flashes, so the strobe view cannot show every flash and may not match this description. Lower the spin rate to bring the strobe rate down.</span>`;
+    }
+    const k = Math.round(screenRate / params.strobe);
+    const even = screenRate / k;
+    if (Math.abs(params.strobe - even) < 0.01 * even || !Number.isFinite(perRev)) return '';
+    return ` ${shown}; strobe rates that divide evenly into it look steadiest. A spin rate of ${fmt(even / perRev, 3)} rev/s would give ${fmt(even, 1)} flashes a second.`;
+  }
+
   function updateReadout() {
     const s = M.stepPerFlash(params.spin, params.strobe);
+    const perRev = M.TAU / s;
+    const wheel = s === 0
+      ? 'The wheel is not spinning.'
+      : `<b>${fmt(perRev)} flashes per revolution</b>: the wheel turns ${fmt(deg(s))}° between flashes.`;
     readout.innerHTML = `
-      <p>The wheel turns <b>${fmt(deg(s))}°</b> between flashes (${fmt(M.TAU / s)} flashes per revolution).</p>
+      <p>${wheel}${describeScreen(perRev)}</p>
       ${Rc.countedMoves(recipe).map((move) => describeRing(move, s)).join('')}`;
+    updateCountGuide(perRev);
+  }
+
+  // --- Count guide: which counts stand still or move, and which way, at the current
+  // flashes per revolution. The same for marks, semicircles, nibbles, wings and stepped rings.
+
+  const countGuide = document.getElementById('count-guide');
+  const GUIDE_ROWS = [
+    ['slow', 'Slowly', 'up to 1/10'],
+    ['steady', 'Steadily', 'up to 1/5'],
+    ['fast', 'Fast', 'up to 3/10'],
+  ];
+
+  function updateCountGuide(perRev) {
+    if (!Number.isFinite(perRev)) {
+      countGuide.innerHTML = '<p class="note">Set the wheel spinning to see which counts move.</p>';
+      return;
+    }
+    const g = M.countGuide(perRev, 3, 48);
+    const list = (counts) => (counts.length ? counts.join(', ') : '—');
+    const rows = GUIDE_ROWS.map(
+      ([key, label, how]) => `<tr><th>${label}<br><span class="note">${how} spacing per flash</span></th>
+        <td>${list(g[key].with)}</td><td>${list(g[key].against)}</td></tr>`,
+    ).join('');
+    countGuide.innerHTML = `
+      <p class="note">Counts from 3 to 48 at ${fmt(perRev)} flashes per revolution.</p>
+      <table>
+        <tr><th></th><th>With the wheel</th><th>Against the wheel</th></tr>
+        ${rows}
+      </table>
+      <p class="note"><b>Still:</b> ${list(g.still)}.</p>
+      <p class="note"><b>Hard to read:</b> ${list(g.unclear)}. <b>Ambiguous:</b> ${list(g.ambiguous)}.</p>`;
   }
 
   // --- Solver: pick rates so rings A and B drift at equal speed in opposite directions.
@@ -455,6 +528,26 @@
   let nextFlash = null;
   let paused = false;
 
+  // Flashes are timed from a frame time plus this, so a strobe rate that divides evenly into
+  // the screen's never sits on a frame boundary, where jitter would show two flashes, then none.
+  const FLASH_OFFSET = 0.004;
+
+  // The screen's refresh rate, measured from frame times, for the readout.
+  let screenRate = null;
+  const frameGaps = [];
+
+  function measureScreen(gap) {
+    if (!(gap > 0 && gap < 0.1)) return; // skip the first frame and stalls
+    frameGaps.push(gap);
+    if (frameGaps.length < 60) return;
+    const sorted = frameGaps.splice(0).sort((x, y) => x - y);
+    const rate = Math.round(1 / sorted[30]);
+    if (screenRate === null || Math.abs(rate - screenRate) > 2) {
+      screenRate = rate;
+      updateReadout();
+    }
+  }
+
   function flash(angle, period) {
     const glow = params.afterglow / 1000;
     const keep = glow > 0 ? Math.exp(-period / glow) : 0;
@@ -466,8 +559,9 @@
     const t = now / 1000;
     if (lastTime === null) {
       lastTime = t;
-      nextFlash = t;
+      nextFlash = t + FLASH_OFFSET;
     }
+    measureScreen(t - lastTime);
 
     if (drawing) stepDrawing(t);
 
@@ -480,7 +574,7 @@
         nextFlash += period;
         count++;
       }
-      if (nextFlash <= t) nextFlash = t + period; // fell behind (e.g. hidden tab): skip ahead
+      if (nextFlash <= t) nextFlash = t + FLASH_OFFSET; // fell behind (e.g. hidden tab): skip ahead
       wheelAngle = (wheelAngle + omega * (t - lastTime)) % M.TAU;
     }
     lastTime = t;
@@ -631,12 +725,37 @@
 
   // --- Wiring.
 
-  bindControl('spin', updateReadout);
+  // Spin and strobe rates are what is saved and undone. Flashes per revolution links them:
+  // changing it or the spin rate moves the strobe rate to keep the pattern; changing the
+  // strobe rate (or the solver changing either rate) moves it. It is held while the wheel
+  // is stopped, so spinning up again restores the same pattern.
+  let perRev = 12;
+
+  function holdPerRev() {
+    if (params.spin > 0 && params.strobe > 0) perRev = M.flashesPerRev(params.spin, params.strobe);
+    setters.fpr(perRev);
+  }
+
+  bindControl('fpr', (byUser) => {
+    if (!byUser) return;
+    if (params.fpr > 0) perRev = params.fpr;
+    if (params.spin > 0) setters.strobe(perRev * params.spin);
+    else holdPerRev();
+  });
+  bindControl('spin', (byUser) => {
+    if (byUser && params.spin > 0) setters.strobe(perRev * params.spin); // (updates the readout)
+    else {
+      holdPerRev();
+      updateReadout();
+    }
+  });
   bindControl('strobe', () => {
-    if (lastTime !== null) nextFlash = Math.min(nextFlash, lastTime + 1 / params.strobe);
+    if (lastTime !== null) nextFlash = Math.min(nextFlash, lastTime + FLASH_OFFSET + 1 / params.strobe);
+    holdPerRev();
     updateReadout();
   });
   bindControl('afterglow', () => {});
+  holdPerRev();
 
   document.getElementById('spin').closest('fieldset').addEventListener('change', remember);
   document.getElementById('solve-strobe').addEventListener('click', () => {
@@ -652,7 +771,7 @@
   pauseButton.addEventListener('click', () => {
     paused = !paused;
     pauseButton.textContent = paused ? 'Resume' : 'Pause';
-    if (!paused) nextFlash = lastTime;
+    if (!paused) nextFlash = lastTime + FLASH_OFFSET;
   });
 
   window.addEventListener('resize', rebuildLayers);

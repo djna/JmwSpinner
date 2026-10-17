@@ -377,7 +377,7 @@ test('saved moves load back with their ids, seeds, fields and links', () => {
 
 test('loading moves with high ids keeps new ids above them', () => {
   const loaded = R.movesFromSaved([{ id: 5000, type: 'marks' }]);
-  assert.equal(loaded[0].count, 12); // defaults fill in
+  assert.equal(loaded[0].count, 11); // defaults fill in
   assert.ok(R.createMove('marks').id > 5000);
 });
 

@@ -259,3 +259,30 @@ input[type="color"] {
   background: none;
   cursor: pointer;
 }
+
+/* The count guide: which counts move which way at the current flashes per revolution. */
+#count-guide {
+  padding: 0 14px 12px;
+}
+
+#count-guide table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 6px 0;
+}
+
+#count-guide th,
+#count-guide td {
+  text-align: left;
+  vertical-align: top;
+  padding: 4px 8px 4px 0;
+  border-top: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+#count-guide th .note {
+  font-weight: normal;
+}
+
+#count-guide p {
+  margin: 4px 0;
+}

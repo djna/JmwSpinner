@@ -56,3 +56,38 @@ test('strobeRateFor and spinRateFor invert stepPerFlash', () => {
   close(M.spinRateFor(s, 31.2), 2.5, 1e-9);
   close(M.stepPerFlash(2.5, M.strobeRateFor(s, 2.5)), s, 1e-12);
 });
+
+test('flashesPerRev is the strobe rate over the spin rate', () => {
+  close(M.flashesPerRev(2.5, 30), 12);
+  close(M.flashesPerRev(2.42, 34.5), 14.26, 0.01);
+});
+
+test('driftFraction is count ÷ flashes per revolution less the nearest whole number', () => {
+  close(M.driftFraction(12, 12), 0);
+  close(M.driftFraction(12, 24), 0);
+  close(M.driftFraction(12, 13), 1 / 12);
+  close(M.driftFraction(12, 11), -1 / 12);
+  close(M.driftFraction(12, 25), 1 / 12);
+  close(M.driftFraction(12, 10), -1 / 6);
+  // The readout example: 12 nibbles at 14.26 flashes per revolution drift back 4.75° of 30°.
+  close(M.driftFraction(14.26, 12) * 30, -4.75, 0.01);
+});
+
+test('driftBand names how a drift reads', () => {
+  assert.equal(M.driftBand(0), 'still');
+  assert.equal(M.driftBand(-1 / 12), 'slow');
+  assert.equal(M.driftBand(1 / 6), 'steady');
+  assert.equal(M.driftBand(-0.25), 'fast');
+  assert.equal(M.driftBand(0.35), 'unclear');
+  assert.equal(M.driftBand(-0.5), 'ambiguous');
+});
+
+test('countGuide sorts counts by motion at 12 flashes per revolution', () => {
+  const g = M.countGuide(12, 3, 30);
+  assert.deepEqual(g.still, [12, 24]);
+  assert.deepEqual(g.slow, { with: [13, 25], against: [11, 23] });
+  assert.deepEqual(g.steady, { with: [14, 26], against: [10, 22] });
+  assert.deepEqual(g.fast, { with: [3, 15, 27], against: [9, 21] });
+  assert.deepEqual(g.unclear, [4, 8, 16, 20, 28]);
+  assert.deepEqual(g.ambiguous, [5, 6, 7, 17, 18, 19, 29, 30]);
+});
