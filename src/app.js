@@ -427,7 +427,8 @@
     const perRev = M.TAU / s;
     const wheel = s === 0
       ? 'The wheel is not spinning.'
-      : `<b>${fmt(perRev)} flashes per revolution</b>: the wheel turns ${fmt(deg(s))}° between flashes.`;
+      : `<b>${fmt(perRev)} flashes per revolution</b> at ${fmt(params.spin)} rev/s, so the strobe flashes
+        <b>${fmt(params.strobe, 1)} times a second</b> and the wheel turns ${fmt(deg(s))}° between flashes.`;
     readout.innerHTML = `
       <p>${wheel}${describeScreen(perRev)}</p>
       ${Rc.countedMoves(recipe).map((move) => describeRing(move, s)).join('')}`;
@@ -469,7 +470,7 @@
 
   const solverNote = document.getElementById('solver-note');
   const ringChoice = [document.getElementById('ring-a'), document.getElementById('ring-b')];
-  const solveButtons = [document.getElementById('solve-strobe'), document.getElementById('solve-spin')];
+  const solveButton = document.getElementById('solve');
   const SOLVER_HINT = solverNote.textContent;
   const NEEDS_PAIR = 'Needs at least two rings of marks or semicircles.';
 
@@ -486,7 +487,7 @@
       select.disabled = !pair;
       if (pair) select.value = pair[i];
     });
-    for (const button of solveButtons) button.disabled = !pair;
+    solveButton.disabled = !pair;
     if (!pair) solverNote.textContent = NEEDS_PAIR;
     else if (solverNote.textContent === NEEDS_PAIR) solverNote.textContent = SOLVER_HINT;
   }
@@ -505,17 +506,22 @@
     });
   });
 
-  function solve(target) {
+  // Sets flashes per revolution, keeping the spin rate (so the strobe rate follows).
+  function solve() {
     const [a, b] = pair.map((id) => recipe.moves.find((m) => m.id === id));
     const m1 = Math.max(1, Math.round(Number(document.getElementById('m1').value) || 1));
     const m2 = Math.max(1, Math.round(Number(document.getElementById('m2').value) || 1));
     const s = M.opposingStep(a.count, b.count, m1, m2);
-    if (target === 'strobe') setters.strobe(M.strobeRateFor(s, params.spin));
-    else setters.spin(M.spinRateFor(s, params.strobe));
+    perRev = M.TAU / s;
+    if (params.spin > 0) setters.strobe(perRev * params.spin);
+    else {
+      setters.fpr(perRev);
+      updateReadout();
+    }
 
     const opposite = Math.abs(M.apparentStep(s, a.count) + M.apparentStep(s, b.count)) < 1e-9;
     solverNote.textContent = opposite
-      ? `Solved for ${target === 'strobe' ? 'strobe rate' : 'spin rate'} with ${m1} and ${m2} spacing${m1 === 1 && m2 === 1 ? '' : 's'} per flash.`
+      ? `Set ${fmt(perRev)} flashes per revolution, with ${m1} and ${m2} spacing${m1 === 1 && m2 === 1 ? '' : 's'} per flash.`
       : `These skip counts (${m1}, ${m2}) push a ring past its aliasing limit for ${a.count} and ${b.count}, so the drift won't be equal and opposite. Try smaller values.`;
   }
 
@@ -758,12 +764,8 @@
   holdPerRev();
 
   document.getElementById('spin').closest('fieldset').addEventListener('change', remember);
-  document.getElementById('solve-strobe').addEventListener('click', () => {
-    solve('strobe');
-    remember();
-  });
-  document.getElementById('solve-spin').addEventListener('click', () => {
-    solve('spin');
+  solveButton.addEventListener('click', () => {
+    solve();
     remember();
   });
 

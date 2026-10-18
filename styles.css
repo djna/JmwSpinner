@@ -286,3 +286,26 @@ input[type="color"] {
 #count-guide p {
   margin: 4px 0;
 }
+
+/* Rates set directly: the strobe rate, closed by default. */
+details.direct {
+  grid-column: 1 / -1;
+}
+
+details.direct summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+/* The strobe rate lines up with the rates above it. */
+.side fieldset.spin,
+details.direct .rates {
+  grid-template-columns: 8.5em minmax(70px, 1fr) 4.5em;
+}
+
+details.direct .rates {
+  display: grid;
+  gap: 8px 10px;
+  align-items: center;
+  margin-top: 8px;
+}
