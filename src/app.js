@@ -165,10 +165,44 @@
     return card;
   }
 
+  // A stepped ring's flight time: how long a shape takes from inner to outer radius at the
+  // current rates. Not stored: setting it sets Turns. Its sync is marked `rates` so the
+  // readout refreshes it when the spin or strobe rate changes.
+  function flightControls(move, onChange, syncList) {
+    const id = `move${move.id}-flight`;
+    const label = el('label', { for: id }, 'Flight (s)');
+    const range = el('input', { type: 'range', id, min: 0.1, max: 5, step: 0.05 });
+    const box = el('input', { type: 'number', min: 0.01, step: 'any' });
+    box.setAttribute('aria-label', 'Flight (s)');
+    const step = () => M.stepPerFlash(params.spin, params.strobe);
+    const show = () => {
+      const seconds = Rc.spiralReading(move, step()).flashes / params.strobe;
+      const flies = Number.isFinite(seconds);
+      range.value = flies ? seconds : range.min;
+      box.value = flies ? Number(seconds.toFixed(2)) : '';
+      box.placeholder = flies ? '' : 'none';
+      label.title = flies ? 'Sets Turns to make the flight last this long at the current rates.'
+        : 'Nothing flies: the wheel skips no whole spacings per flash at this count.';
+      label.classList.toggle('inactive', !flies);
+      range.disabled = box.disabled = !flies;
+    };
+    show.rates = true;
+    const set = (value) => {
+      const turns = Rc.turnsForFlight(move, step(), Number(value) * params.strobe);
+      if (turns !== null && Rc.setField(move, 'turns', turns)) onChange();
+      show();
+    };
+    range.addEventListener('input', () => set(range.value));
+    box.addEventListener('change', () => set(box.value));
+    syncList.push(show);
+    return [label, range, box];
+  }
+
   function fieldsGrid(move, onChange, syncList) {
     const fields = el('div', { class: 'move-fields' });
     for (const field of Rc.MOVE_TYPES[move.type].fields) {
       fields.append(...fieldControls(move, field, onChange, syncList));
+      if (field.key === 'turns') fields.append(...flightControls(move, onChange, syncList));
     }
     return fields;
   }
@@ -433,6 +467,7 @@
       <p>${wheel}${describeScreen(perRev)}</p>
       ${Rc.countedMoves(recipe).map((move) => describeRing(move, s)).join('')}`;
     updateCountGuide(perRev);
+    for (const sync of [...syncs, ...draftSyncs]) if (sync.rates) sync();
   }
 
   // --- Count guide: which counts stand still or move, and which way, at the current
