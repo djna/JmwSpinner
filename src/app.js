@@ -82,6 +82,7 @@
   function setTechnical(on) {
     technical = on;
     document.body.classList.toggle('technical', on);
+    for (const sync of [...syncs, ...draftSyncs]) sync(); // some rows show only in it
     for (const button of document.querySelectorAll('.tech-toggle')) button.setAttribute('aria-pressed', String(on));
   }
 
@@ -301,10 +302,65 @@
     return [label, range, box];
   }
 
+  // Lining a ring up with another, offered only when some ring's count fits (equal, or one a
+  // multiple of the other), since otherwise the two coincide at just one point. Once a ring
+  // is chosen: where the shapes sit, in line, halfway between, or elsewhere on a slider. The
+  // technical view shows all of it, including an offset from the top of the wheel.
+  function lineUpControls(move, onChange, syncList) {
+    const offsetField = Rc.MOVE_TYPES[move.type].fields.find((f) => f.key === 'offset');
+    const id = `move${move.id}-align`;
+    const label = el('label', { for: id }, 'Line up with');
+    const select = el('select', { id, class: 'wide' });
+    select.addEventListener('change', () => {
+      if (Rc.setField(move, 'align', select.value)) onChange();
+    });
+
+    const placeId = `move${move.id}-place`;
+    const placeLabel = el('label', { for: placeId }, 'Shapes sit');
+    const place = el('select', { id: placeId, class: 'wide' });
+    for (const [value, text] of [['inline', 'in line'], ['between', 'halfway between'], ['custom', 'elsewhere…']]) {
+      place.append(el('option', { value }, text));
+    }
+    let custom = false; // chosen "elsewhere": keep the slider while it passes 0 or 0.5
+    place.addEventListener('change', () => {
+      custom = place.value === 'custom';
+      if (!custom && Rc.setField(move, 'offset', place.value === 'between' ? 0.5 : 0)) onChange();
+      show();
+    });
+    const offset = fieldControls(move, offsetField, onChange, syncList); // label, slider, box
+
+    const show = () => {
+      const choices = Rc.lineUpChoices(recipe, move);
+      const target = Rc.alignedRing(recipe, move);
+      const options = [['', 'nothing'], ...choices.map((m) => [m.id, `${moveName(m)} (${m.count})`])];
+      if (target && !choices.includes(target)) {
+        options.push([target.id, `${moveName(target)} (${target.count}: counts don't fit)`]);
+      }
+      select.replaceChildren(...options.map(([value, text]) => el('option', { value }, text)));
+      select.value = move.align ?? '';
+      const inactive = Rc.fieldInactive(recipe, move, 'align'); // e.g. anchored wings
+      label.classList.toggle('inactive', inactive);
+      select.disabled = place.disabled = inactive;
+      label.hidden = select.hidden = !technical && (inactive || (!choices.length && !target));
+
+      const off = move.offset || 0;
+      if (Math.abs(off) > 1e-9 && Math.abs(Math.abs(off) - 0.5) > 1e-9) custom = true;
+      place.value = custom ? 'custom' : Math.abs(off) > 1e-9 ? 'between' : 'inline';
+      placeLabel.hidden = place.hidden = !target || (inactive && !technical);
+      for (const node of offset) node.hidden = !technical && !(target && custom && !inactive);
+    };
+    syncList.push(show);
+    return [label, select, placeLabel, place, ...offset];
+  }
+
   function fieldsGrid(move, onChange, syncList, skip = []) {
     const fields = el('div', { class: 'move-fields' });
     for (const field of Rc.MOVE_TYPES[move.type].fields) {
-      if (skip.includes(field.key)) continue;
+      if (skip.includes(field.key) || field.key === 'offset') continue; // offset: with Line up with
+      if (field.key === 'align') {
+        fields.append(...lineUpControls(move, onChange, syncList));
+        continue;
+      }
       fields.append(...fieldControls(move, field, onChange, syncList));
       if (field.key === 'turns') fields.append(...flightControls(move, onChange, syncList));
     }

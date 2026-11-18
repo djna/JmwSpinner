@@ -554,3 +554,20 @@ test('moving a move up or down steps past nibbles', () => {
   assert.deepEqual(recipe.moves.map((m) => m.id), [marks.id, circle.id, nibbles.id]);
   assert.equal(R.shiftMove(recipe, circle.id, 1), false); // only nibbles after it
 });
+
+test('a ring is offered only rings whose counts fit to line up with', () => {
+  const recipe = R.defaultRecipe();
+  const circle = R.addMove(recipe, 'circle');
+  const outer = R.addNibbles(recipe, circle, 12); // outer, 13
+  const inner = R.addNibbles(recipe, circle, 12); // inner, 13
+  const outerBack = R.addNibbles(recipe, circle, 12); // outer, 11
+  const semis = R.createMove('semicircles', { count: 13 });
+  const marks = R.createMove('marks', { count: 26 });
+  const odd = R.createMove('marks', { count: 12 });
+  recipe.moves.push(semis, marks, odd);
+  const ids = (move) => R.lineUpChoices(recipe, move).map((m) => m.id);
+  assert.deepEqual(ids(outer), [inner.id, semis.id, marks.id]); // not itself, the 11s or the 12s
+  assert.deepEqual(ids(outerBack), []);
+  assert.deepEqual(ids(odd), []);
+  assert.ok(R.countsFit(13, 26) && R.countsFit(6, 12) && !R.countsFit(11, 13));
+});

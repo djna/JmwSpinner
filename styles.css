@@ -236,7 +236,7 @@ select.wide {
 
 .move-fields {
   display: grid;
-  grid-template-columns: auto minmax(100px, 1fr) 5.5em;
+  grid-template-columns: 6.5em minmax(100px, 1fr) 5.5em; /* the same in every card and set */
   gap: 6px 10px;
   align-items: center;
 }
@@ -253,7 +253,7 @@ label.inactive {
 }
 
 .draft .move-fields {
-  grid-template-columns: auto minmax(60px, 1fr) 4.5em;
+  grid-template-columns: 6.5em minmax(60px, 1fr) 4.5em;
 }
 
 .draft .move-head select {
@@ -384,4 +384,9 @@ body.technical input[type="color"].wide {
 
 .nibble-set .move-name {
   font-weight: 500;
+}
+
+/* Rows a card leaves out until they mean something (e.g. Line up with). */
+.move-fields [hidden] {
+  display: none !important;
 }

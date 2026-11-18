@@ -696,6 +696,24 @@
     return move;
   }
 
+  // Whether rings of `a` and `b` shapes line up shape for shape: equal counts, or one a
+  // multiple of the other. Otherwise they coincide at just one point.
+  function countsFit(a, b) {
+    return a === b || a % b === 0 || b % a === 0;
+  }
+
+  // The rings a counted move can usefully line up with: other counted rings whose counts fit.
+  // Nibbles line up with other nibbles only across their circle (inner with outer), where
+  // staggered bites make a zigzag band.
+  function lineUpChoices(recipe, move) {
+    return countedMoves(recipe).filter(
+      (m) =>
+        m.id !== move.id &&
+        countsFit(m.count, move.count) &&
+        !(isPart(m) && isPart(move) && (m.attach !== move.attach || m.edge === move.edge)),
+    );
+  }
+
   // Moves with a mark count: the ones that drift under the strobe.
   function countedMoves(recipe) {
     return recipe.moves.filter((m) => MOVE_TYPES[m.type].counted);
@@ -753,6 +771,8 @@
     MAX_NIBBLE_SETS,
     nibblesOf,
     turnWay,
+    countsFit,
+    lineUpChoices,
     addNibbles,
     attachedCircle,
     alignedRing,
