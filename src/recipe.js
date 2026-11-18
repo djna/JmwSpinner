@@ -53,7 +53,7 @@
         WOBBLE,
         COLOUR,
       ],
-      defaults: { count: 12, radius: 0.8, length: 0.1, width: 0.03, align: null, offset: 0, wobble: 0.3, colour: INK },
+      defaults: { count: 11, radius: 0.8, length: 0.1, width: 0.03, align: null, offset: 0, wobble: 0.3, colour: INK },
       wobbly: true,
     },
     semicircles: {
@@ -592,6 +592,17 @@
     return { reading: inward ? 'in' : 'out', skip, strain, flashes, lag };
   }
 
+  // The turns that make a stepped ring's flight (inner to outer radius) last about `flashes`
+  // flashes at `step` per flash: the inverse of spiralReading's flashes, rounded to a whole
+  // number of shapes. Null when the wheel skips no whole spacings, so nothing flies.
+  function turnsForFlight(move, step, flashes) {
+    const skip = Math.round(step / (TAU / move.count));
+    if (skip === 0 || !(flashes > 0)) return null;
+    const outSteps = flashes * Math.abs(skip);
+    const total = Math.max(2, Math.round(move.pattern === 'out' ? outSteps + 1 : 2 * outSteps));
+    return total / move.count;
+  }
+
   // The recipe as drawn: copies of the moves with attachments and alignments worked out
   // into radii and phases. Each circle also gets the list of nibble rings that cut it.
   function resolve(recipe) {
@@ -685,6 +696,7 @@
     steppedRadii,
     flapOf,
     spiralReading,
+    turnsForFlight,
     steppedTotal,
     anchorRing,
     syncAnchors,

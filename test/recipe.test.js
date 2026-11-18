@@ -377,7 +377,7 @@ test('saved moves load back with their ids, seeds, fields and links', () => {
 
 test('loading moves with high ids keeps new ids above them', () => {
   const loaded = R.movesFromSaved([{ id: 5000, type: 'marks' }]);
-  assert.equal(loaded[0].count, 12); // defaults fill in
+  assert.equal(loaded[0].count, 11); // defaults fill in
   assert.ok(R.createMove('marks').id > 5000);
 });
 
@@ -477,4 +477,19 @@ test('every drawing move has a colour, defaulting to ink; nibbles have none', ()
   const loaded = R.movesFromSaved([{ id: 7000, type: 'marks', colour: '#00aa44' }]);
   assert.equal(loaded[0].colour, '#00aa44');
   assert.equal(R.movesFromSaved([{ id: 7001, type: 'marks' }])[0].colour, R.INK); // older files
+});
+
+test('turnsForFlight inverts the flight of a stepped ring', () => {
+  const step = (2 * Math.PI) / 12; // 12 flashes per revolution: 13 positions skip one per flash
+  const out = R.createMove('stepped', { count: 13, pattern: 'out' });
+  out.turns = R.turnsForFlight(out, step, 36); // 1.2 s at 30 flashes/s
+  assert.equal(R.steppedTotal(out), 37);
+  assert.equal(R.spiralReading(out, step).flashes, 36);
+  const loop = R.createMove('stepped', { count: 13, pattern: 'loop' });
+  loop.turns = R.turnsForFlight(loop, step, 36);
+  assert.equal(R.spiralReading(loop, step).flashes, 36);
+  const doubled = R.createMove('stepped', { count: 25, pattern: 'out' }); // skips two per flash
+  doubled.turns = R.turnsForFlight(doubled, step, 36);
+  assert.equal(R.spiralReading(doubled, step).flashes, 36);
+  assert.equal(R.turnsForFlight(R.createMove('stepped', { count: 5 }), step, 36), null); // skips none
 });

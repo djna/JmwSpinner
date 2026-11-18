@@ -259,3 +259,53 @@ input[type="color"] {
   background: none;
   cursor: pointer;
 }
+
+/* The count guide: which counts move which way at the current flashes per revolution. */
+#count-guide {
+  padding: 0 14px 12px;
+}
+
+#count-guide table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 6px 0;
+}
+
+#count-guide th,
+#count-guide td {
+  text-align: left;
+  vertical-align: top;
+  padding: 4px 8px 4px 0;
+  border-top: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+#count-guide th .note {
+  font-weight: normal;
+}
+
+#count-guide p {
+  margin: 4px 0;
+}
+
+/* Rates set directly: the strobe rate, closed by default. */
+details.direct {
+  grid-column: 1 / -1;
+}
+
+details.direct summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+/* The strobe rate lines up with the rates above it. */
+.side fieldset.spin,
+details.direct .rates {
+  grid-template-columns: 8.5em minmax(70px, 1fr) 4.5em;
+}
+
+details.direct .rates {
+  display: grid;
+  gap: 8px 10px;
+  align-items: center;
+  margin-top: 8px;
+}
