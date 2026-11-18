@@ -519,20 +519,30 @@ test('loading nibbles with no circle attaches them to the latest circle before t
   assert.deepEqual(alone.map((m) => m.type), ['marks']);
 });
 
-test('a circle takes up to six sets of nibbles, listed after it', () => {
+test('a circle takes up to four sets of nibbles, filling slots in order', () => {
   const recipe = R.defaultRecipe();
   const circle = R.addMove(recipe, 'circle');
   const marks = R.addMove(recipe, 'marks');
-  const first = R.addNibbles(recipe, circle);
-  R.setField(first, 'edge', 'inner');
-  const second = R.addNibbles(recipe, circle);
-  assert.equal(second.edge, 'inner'); // as the last set
-  assert.deepEqual(recipe.moves.map((m) => m.id), [circle.id, first.id, second.id, marks.id]);
-  assert.equal(first.attach, circle.id);
-  assert.deepEqual([first.count, second.count], [13, 11]); // opposite drift at 12 per revolution
-  for (let i = 2; i < R.MAX_NIBBLE_SETS; i++) assert.ok(R.addNibbles(recipe, circle));
-  assert.equal(R.addNibbles(recipe, circle), null);
-  assert.equal(R.nibblesOf(recipe, circle).length, 6);
+  const sets = [];
+  for (let i = 0; i < R.MAX_NIBBLE_SETS; i++) sets.push(R.addNibbles(recipe, circle, 12));
+  assert.deepEqual(recipe.moves.map((m) => m.id), [circle.id, ...sets.map((m) => m.id), marks.id]);
+  // outer clockwise, inner clockwise, outer anticlockwise, inner anticlockwise
+  assert.deepEqual(sets.map((m) => [m.edge, m.count]), [['outer', 13], ['inner', 13], ['outer', 11], ['inner', 11]]);
+  assert.ok(sets.every((m) => m.attach === circle.id));
+  assert.equal(R.addNibbles(recipe, circle, 12), null);
+});
+
+test('a new set of nibbles takes the first empty slot', () => {
+  const recipe = R.defaultRecipe();
+  const circle = R.addMove(recipe, 'circle');
+  const first = R.addNibbles(recipe, circle, 12); // outer clockwise
+  R.setField(first, 'count', 11); // now outer anticlockwise
+  const next = R.addNibbles(recipe, circle, 12);
+  assert.deepEqual([next.edge, next.count], ['outer', 13]); // outer clockwise is empty again
+  const after = R.addNibbles(recipe, circle, 12);
+  assert.deepEqual([after.edge, after.count], ['inner', 13]);
+  const odd = R.addNibbles(recipe, circle, 12.5);
+  assert.deepEqual([odd.edge, odd.count], ['inner', 12]); // inner anticlockwise at 12.5
 });
 
 test('moving a move up or down steps past nibbles', () => {

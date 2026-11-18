@@ -657,22 +657,40 @@
     return Boolean(MOVE_TYPES[move.type].needsCircle);
   }
 
-  // Up to this many sets of nibbles per circle; sets can differ in count, edge and shape,
-  // so they can seem to turn different ways.
-  const MAX_NIBBLE_SETS = 6;
+  // Up to this many sets of nibbles per circle, one for each slot: an edge and a way of
+  // turning. Sets on the same circle can seem to turn different ways.
+  const MAX_NIBBLE_SETS = 4;
+  const NIBBLE_SLOTS = [
+    ['outer', 1],
+    ['inner', 1],
+    ['outer', -1],
+    ['inner', -1],
+  ];
 
   function nibblesOf(recipe, circle) {
     return recipe.moves.filter((m) => isPart(m) && m.attach === circle.id);
   }
 
-  // Add a set of nibbles to a circle, listed after its other sets (or the circle), on the
-  // same edge as the last set. Sets alternate 13 and 11 bites, which drift opposite ways at
-  // 12 flashes per revolution. Null when the circle already has the most sets.
-  function addNibbles(recipe, circle) {
+  // Which way a ring of `count` seems to turn at `perRev` flashes per revolution: 1 with the
+  // wheel (clockwise), -1 against it, 0 still.
+  function turnWay(count, perRev) {
+    const step = TAU / perRev;
+    const a = TAU / count;
+    const d = step - a * Math.round(step / a);
+    return Math.abs(d) < 1e-9 ? 0 : Math.sign(d);
+  }
+
+  // Add a set of nibbles to a circle, listed after its other sets (or the circle). It takes
+  // the first slot in the order outer clockwise, inner clockwise, outer anticlockwise, inner
+  // anticlockwise that no set fills at `perRev` flashes per revolution, with a count that
+  // drifts slowly that way (13 or 11 at 12). Null when the circle already has the most sets.
+  function addNibbles(recipe, circle, perRev = 12) {
     const sets = nibblesOf(recipe, circle);
     if (sets.length >= MAX_NIBBLE_SETS) return null;
-    const move = createMove('nibbles', { attach: circle.id, count: sets.length % 2 ? 11 : 13 });
-    if (sets.length) setField(move, 'edge', sets[sets.length - 1].edge);
+    const filled = (edge, way) => sets.some((m) => m.edge === edge && turnWay(m.count, perRev) === way);
+    const [edge, way] = NIBBLE_SLOTS.find(([e, w]) => !filled(e, w)) || NIBBLE_SLOTS[0];
+    const count = Math.max(3, way > 0 ? Math.floor(perRev) + 1 : Math.ceil(perRev) - 1);
+    const move = createMove('nibbles', { attach: circle.id, edge, count });
     const last = sets.length ? sets[sets.length - 1] : circle;
     recipe.moves.splice(recipe.moves.indexOf(last) + 1, 0, move);
     return move;
@@ -734,6 +752,7 @@
     isPart,
     MAX_NIBBLE_SETS,
     nibblesOf,
+    turnWay,
     addNibbles,
     attachedCircle,
     alignedRing,

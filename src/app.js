@@ -91,7 +91,7 @@
   }
 
   // A move's name, numbered in drawing order (e.g. "2. Ring of marks"). Nibbles are named by
-  // their circle and edge, numbered when the edge has more than one set.
+  // their circle, edge and the way they seem to turn, numbered if two sets share all three.
   function moveName(move) {
     if (Rc.isPart(move)) return `${nibbleCircleName(move)}, ${nibbleName(move).toLowerCase()}`;
     return `${mainMoves().indexOf(move) + 1}. ${Rc.MOVE_TYPES[move.type].label}`;
@@ -102,11 +102,16 @@
     return circle ? moveName(circle) : 'No circle';
   }
 
+  const WAYS = { 1: 'clockwise', '-1': 'anticlockwise', 0: 'still' };
+
   function nibbleName(move) {
     const circle = Rc.attachedCircle(recipe, move);
-    const same = circle ? Rc.nibblesOf(recipe, circle).filter((m) => m.edge === move.edge) : [move];
+    const way = (m) => Rc.turnWay(m.count, perRev);
+    const same = circle
+      ? Rc.nibblesOf(recipe, circle).filter((m) => m.edge === move.edge && way(m) === way(move))
+      : [move];
     const edge = move.edge === 'inner' ? 'Inner' : 'Outer';
-    return `${edge} nibbles${same.length > 1 ? ` ${same.indexOf(move) + 1}` : ''}`;
+    return `${edge} nibbles, ${WAYS[way(move)]}${same.length > 1 ? ` ${same.indexOf(move) + 1}` : ''}`;
   }
 
   // The choices for a reference field: none, or another move of the right kind. A ring
@@ -235,7 +240,7 @@
     const head = el('div', { class: 'move-head' });
     head.append(el('span', { class: 'move-name' }, 'Nibbles'));
     const [add] = actionButtons(circle, [
-      ['+ Add nibbles', 'Add a set of nibbles', sets.length >= Rc.MAX_NIBBLE_SETS, () => Rc.addNibbles(recipe, circle)],
+      ['+ Add nibbles', 'Add a set of nibbles', sets.length >= Rc.MAX_NIBBLE_SETS, () => Rc.addNibbles(recipe, circle, perRev)],
     ]);
     if (add.disabled) add.title = `A circle can have up to ${Rc.MAX_NIBBLE_SETS} sets of nibbles.`;
     head.append(add);
@@ -245,9 +250,11 @@
       const box = el('div', { class: 'nibble-set' });
       const setHead = el('div', { class: 'move-head' });
       const name = el('span', { class: 'move-name' }, nibbleName(set));
-      syncs.push(() => {
-        name.textContent = nibbleName(set); // follows its edge
-      });
+      const rename = () => {
+        name.textContent = nibbleName(set); // follows its edge, count and the rates
+      };
+      rename.rates = true;
+      syncs.push(rename);
       setHead.append(
         name,
         ...actionButtons(set, [
