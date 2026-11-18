@@ -325,3 +325,45 @@ details.direct .rates {
   align-items: center;
   margin-top: 8px;
 }
+
+/* Technical view: number boxes and colour codes, hidden by default. A slider then also
+   takes its number box's column. */
+body:not(.technical) .tech-only,
+body:not(.technical) input[type="range"] + input[type="number"] {
+  display: none;
+}
+
+body:not(.technical) input[type="range"]:has(+ input[type="number"]) {
+  grid-column: span 2;
+}
+
+body.technical input[type="color"].wide {
+  grid-column: span 1;
+}
+
+.colour-code {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: ui-monospace, monospace;
+}
+
+.tech-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+}
+
+.tech-toggle[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #222;
+}
+
+.draw-row {
+  margin-top: 10px;
+  align-items: center;
+}
+
+.draft .draw-row button.draw {
+  margin-top: 0;
+}

@@ -56,6 +56,35 @@
     return node;
   }
 
+  // --- Technical view: number boxes beside the sliders, and colour codes beside the colour
+  // pickers. Off by default, since sliders, choices and (later) the wheel itself should be
+  // enough; a calipers button on each card turns it on and off everywhere.
+
+  let technical = false;
+  const CALIPERS = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none"
+    stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M2 4.5h20v3H2z"/><path d="M3.5 7.5V21l3.5-6.5v-7"/>
+    <path d="M13 2.5h6v7h-6z"/><path d="M14 9.5V21l3.5-6.5v-5"/></svg>`;
+
+  function techButton() {
+    const button = el('button', {
+      type: 'button',
+      class: 'tech-toggle',
+      title: 'Show numbers (technical view)',
+      'aria-label': 'Show numbers',
+      'aria-pressed': String(technical),
+    });
+    button.innerHTML = CALIPERS;
+    button.addEventListener('click', () => setTechnical(!technical));
+    return button;
+  }
+
+  function setTechnical(on) {
+    technical = on;
+    document.body.classList.toggle('technical', on);
+    for (const button of document.querySelectorAll('.tech-toggle')) button.setAttribute('aria-pressed', String(on));
+  }
+
   function moveName(move) {
     return `${recipe.moves.indexOf(move) + 1}. ${Rc.MOVE_TYPES[move.type].label}`;
   }
@@ -95,10 +124,18 @@
       picker.addEventListener('input', () => {
         if (Rc.setField(move, field.key, picker.value)) onChange();
       });
-      syncList.push(() => {
-        picker.value = move[field.key];
+      // Its code, e.g. #1c1c1f, shown in the technical view.
+      const code = el('input', { type: 'text', class: 'tech-only colour-code', maxlength: 7, spellcheck: 'false' });
+      code.setAttribute('aria-label', `${field.label} code`);
+      code.addEventListener('change', () => {
+        const text = code.value.trim();
+        if (Rc.setField(move, field.key, text.startsWith('#') ? text : `#${text}`)) onChange();
+        code.value = picker.value = move[field.key];
       });
-      return [label, picker];
+      syncList.push(() => {
+        code.value = picker.value = move[field.key];
+      });
+      return [label, picker, code];
     }
 
     if (field.options || field.ref) {
@@ -158,6 +195,7 @@
       });
       head.append(button);
     }
+    head.append(techButton());
     card.append(head);
 
     card.append(fieldsGrid(move, redrawRecipe, syncs));
@@ -304,7 +342,9 @@
       remember();
     });
 
-    draftCard.replaceChildren(head, fieldsGrid(draft, syncDraft, draftSyncs), drawButton);
+    const drawRow = el('div', { class: 'buttons draw-row' });
+    drawRow.append(drawButton, techButton());
+    draftCard.replaceChildren(head, fieldsGrid(draft, syncDraft, draftSyncs), drawRow);
     syncDraft();
   }
 
@@ -846,6 +886,11 @@
   });
 
   window.addEventListener('resize', rebuildLayers);
+
+  const pauseRow = el('div', { class: 'buttons' });
+  pauseButton.replaceWith(pauseRow);
+  pauseRow.append(pauseButton, techButton());
+  setTechnical(false);
 
   renderCards();
   rebuildLayers();
