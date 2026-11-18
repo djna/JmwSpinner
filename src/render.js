@@ -335,18 +335,9 @@
     });
   }
 
-  // A pen held still over the top of the wheel, its nib on a circle of the given radius,
-  // seen from above: the barrel leans in over the board so it stays in view.
+  // The nib of a pen held still over the top of the wheel, on a circle of the given radius.
   function drawPen(ctx, size, radius, width, colour = INK) {
     inWheelSpace(ctx, size, 0, (c) => {
-      c.lineCap = 'round';
-      c.lineWidth = 0.09;
-      c.strokeStyle = 'rgba(60, 80, 150, 0.55)';
-      c.beginPath();
-      c.moveTo(0.03, -radius + 0.035);
-      c.lineTo(0.26, -radius + 0.32);
-      c.stroke();
-
       c.beginPath();
       c.arc(0, -radius, Math.max(width / 2, 0.012), 0, TAU);
       c.fillStyle = colour;
