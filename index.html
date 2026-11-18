@@ -14,8 +14,6 @@
 
   <main>
     <section class="top">
-      <div id="new-move" class="move draft"></div>
-
       <figure class="wheel">
         <canvas id="wheel-view"></canvas>
         <figcaption>Wheel (as drawn)</figcaption>
@@ -26,73 +24,6 @@
       </figure>
 
       <div class="side">
-        <fieldset class="spin">
-          <legend>Spin and strobe</legend>
-          <label for="fpr">Flashes per revolution</label>
-          <input type="range" id="fpr" min="2" max="48" step="0.25" value="12">
-          <input type="number" id="fpr-num" min="0.1" step="any">
-
-          <label for="spin">Spin rate (rev/s)</label>
-          <input type="range" id="spin" min="0" max="5" step="0.01" value="2.5">
-          <input type="number" id="spin-num" min="0" step="any">
-
-          <p class="note">Flashes per revolution decides which rings move and which way; the spin rate then sets how fast, keeping that pattern.</p>
-
-          <details class="direct">
-            <summary>Set rates directly</summary>
-            <div class="rates">
-              <label for="strobe">Strobe rate (flashes/s)</label>
-              <input type="range" id="strobe" min="1" max="120" step="0.1" value="30">
-              <input type="number" id="strobe-num" min="1" step="any">
-              <p class="note">For exploring, or matching a real strobe. Changing the strobe rate keeps the spin rate and changes flashes per revolution.</p>
-            </div>
-          </details>
-
-          <label for="afterglow">Afterglow (ms)</label>
-          <input type="range" id="afterglow" min="0" max="500" step="5" value="0">
-          <input type="number" id="afterglow-num" min="0" max="500" step="5">
-
-          <button type="button" id="pause">Pause</button>
-        </fieldset>
-
-        <div id="readout" aria-live="polite"></div>
-
-        <details class="solver guide" open>
-          <summary>Counts that move</summary>
-          <div id="count-guide"></div>
-        </details>
-
-        <details class="solver">
-          <summary>Solve for opposite drift</summary>
-          <fieldset>
-            <label for="ring-a">Ring A</label>
-            <select id="ring-a" class="wide"></select>
-
-            <label for="ring-b">Ring B</label>
-            <select id="ring-b" class="wide"></select>
-
-            <label for="m1">Ring A spacings per flash</label>
-            <span></span>
-            <input type="number" id="m1" min="1" max="6" step="1" value="1">
-
-            <label for="m2">Ring B spacings per flash</label>
-            <span></span>
-            <input type="number" id="m2" min="1" max="6" step="1" value="1">
-
-            <div class="buttons">
-              <button type="button" id="solve">Solve flashes per revolution</button>
-            </div>
-            <p id="solver-note" class="note">Sets flashes per revolution (keeping the spin rate) so rings A and B drift at equal speed in opposite directions.</p>
-          </fieldset>
-        </details>
-
-      </div>
-    </section>
-
-    <section class="controls">
-      <fieldset class="recipe">
-        <legend>Recipe</legend>
-        <p class="note">Moves are drawn in order, so later moves draw over earlier ones.</p>
         <div class="buttons history">
           <button type="button" id="undo" title="Undo (⌘Z / Ctrl+Z)" disabled>↶ Undo</button>
           <button type="button" id="redo" title="Redo (⇧⌘Z / Ctrl+Y)" disabled>↷ Redo</button>
@@ -101,8 +32,74 @@
           <input type="file" id="open-file" accept=".json,application/json" hidden>
           <span id="file-status" class="note" aria-live="polite"></span>
         </div>
-        <ol id="moves"></ol>
-      </fieldset>
+
+        <div id="tabs" class="tabs" role="tablist" aria-label="Panels" title="Moves are drawn in order, so later moves draw over earlier ones."></div>
+
+        <div id="overview" class="panel" role="tabpanel">
+          <fieldset class="spin">
+            <legend>Spin and strobe</legend>
+            <label for="fpr">Flashes per revolution</label>
+            <input type="range" id="fpr" min="2" max="48" step="0.25" value="12">
+            <input type="number" id="fpr-num" min="0.1" step="any">
+
+            <label for="spin">Spin rate (rev/s)</label>
+            <input type="range" id="spin" min="0" max="5" step="0.01" value="2.5">
+            <input type="number" id="spin-num" min="0" step="any">
+
+            <p class="note">Flashes per revolution decides which rings move and which way; the spin rate then sets how fast, keeping that pattern.</p>
+
+            <details class="direct">
+              <summary>Set rates directly</summary>
+              <div class="rates">
+                <label for="strobe">Strobe rate (flashes/s)</label>
+                <input type="range" id="strobe" min="1" max="120" step="0.1" value="30">
+                <input type="number" id="strobe-num" min="1" step="any">
+                <p class="note">For exploring, or matching a real strobe. Changing the strobe rate keeps the spin rate and changes flashes per revolution.</p>
+              </div>
+            </details>
+
+            <label for="afterglow">Afterglow (ms)</label>
+            <input type="range" id="afterglow" min="0" max="500" step="5" value="0">
+            <input type="number" id="afterglow-num" min="0" max="500" step="5">
+
+            <button type="button" id="pause">Pause</button>
+          </fieldset>
+
+          <div id="readout" aria-live="polite"></div>
+
+          <details class="solver guide" open>
+            <summary>Counts that move</summary>
+            <div id="count-guide"></div>
+          </details>
+
+          <details class="solver">
+            <summary>Solve for opposite drift</summary>
+            <fieldset>
+              <label for="ring-a">Ring A</label>
+              <select id="ring-a" class="wide"></select>
+
+              <label for="ring-b">Ring B</label>
+              <select id="ring-b" class="wide"></select>
+
+              <label for="m1">Ring A spacings per flash</label>
+              <span></span>
+              <input type="number" id="m1" min="1" max="6" step="1" value="1">
+
+              <label for="m2">Ring B spacings per flash</label>
+              <span></span>
+              <input type="number" id="m2" min="1" max="6" step="1" value="1">
+
+              <div class="buttons">
+                <button type="button" id="solve">Solve flashes per revolution</button>
+              </div>
+              <p id="solver-note" class="note">Sets flashes per revolution (keeping the spin rate) so rings A and B drift at equal speed in opposite directions.</p>
+            </fieldset>
+          </details>
+        </div>
+
+        <div id="new-move" class="move draft panel" role="tabpanel"></div>
+        <ol id="moves" class="panel" role="tabpanel"></ol>
+      </div>
     </section>
   </main>
 

@@ -24,22 +24,21 @@ header p {
   color: var(--muted);
 }
 
-/* Top row: the next move, the two views, then the strobe controls, solver and readout.
-   Narrower windows put the views first and stack the rest under them. */
+/* The two views, then the side panel. Narrower windows put the panel under the views. */
 .top {
   display: grid;
-  grid-template-columns: minmax(250px, 300px) minmax(0, 1fr) minmax(0, 1fr) minmax(290px, 350px);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(320px, 380px);
   gap: 16px;
   align-items: start;
 }
 
-@media (max-width: 1150px) {
+@media (max-width: 1050px) {
   .top {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
-  .top .wheel {
-    order: -1;
+  .top .side {
+    grid-column: 1 / -1;
   }
 }
 
@@ -164,15 +163,9 @@ select.wide {
   grid-column: span 2;
 }
 
-/* The recipe: a list of move cards, each with its own grid of fields. */
+/* The side panel: undo, save and open, then tabs choosing the one card shown below them. */
 
-fieldset.recipe {
-  display: block;
-  flex: 1 1 100%;
-}
-
-fieldset.recipe > .history {
-  margin-bottom: 10px;
+.side > .history {
   align-items: center;
 }
 
@@ -180,25 +173,48 @@ fieldset.recipe > .history {
   margin-left: 6px;
 }
 
-fieldset.recipe > .note {
-  clear: both;
-  margin: 0 0 10px;
-  padding-top: 4px;
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
+
+.tab {
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.tab[aria-selected="true"] {
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.panel[hidden],
+.move[hidden] {
+  display: none;
+}
+
+#overview:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Move cards, each with its own grid of fields. */
 
 #moves {
   list-style: none;
-  margin: 0 0 12px;
+  margin: 0;
   padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
 }
 
 .move {
-  flex: 0 1 360px;
-  background: var(--bg);
-  border-radius: 6px;
+  background: var(--panel);
+  border-radius: 8px;
   padding: 10px 12px;
 }
 

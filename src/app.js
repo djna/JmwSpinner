@@ -137,7 +137,7 @@
   }
 
   function moveCard(move, index) {
-    const card = el('li', { class: 'move' });
+    const card = el('li', { class: 'move', 'data-id': move.id });
     const head = el('div', { class: 'move-head' });
     head.append(el('span', { class: 'move-name' }, moveName(move)));
 
@@ -217,6 +217,39 @@
     syncs = [];
     movesList.replaceChildren(...recipe.moves.map(moveCard));
     renderDraft();
+    renderTabs();
+  }
+
+  // --- Panel tabs. The side panel shows one card at a time: the overview (spin and strobe,
+  // readout, count guide, solver), one move's card, or the New move card.
+
+  const tabs = document.getElementById('tabs');
+  const overview = document.getElementById('overview');
+  let panelShown = 'overview'; // 'overview', 'new' or a move id
+
+  function showPanel(which) {
+    panelShown = which;
+    renderTabs();
+  }
+
+  function renderTabs() {
+    if (typeof panelShown === 'number' && !recipe.moves.some((m) => m.id === panelShown)) panelShown = 'overview';
+    const entries = [
+      ['overview', 'Spin and strobe'],
+      ...recipe.moves.map((move) => [move.id, moveName(move)]),
+      ['new', '+ New move'],
+    ];
+    tabs.replaceChildren(
+      ...entries.map(([key, text]) => {
+        const tab = el('button', { type: 'button', role: 'tab', class: 'tab', 'aria-selected': String(key === panelShown) }, text);
+        tab.addEventListener('click', () => showPanel(key));
+        return tab;
+      }),
+    );
+    overview.hidden = panelShown !== 'overview';
+    draftCard.hidden = panelShown !== 'new';
+    movesList.hidden = typeof panelShown !== 'number';
+    for (const card of movesList.children) card.hidden = Number(card.dataset.id) !== panelShown;
   }
 
   // --- The next move: chosen and configured here, then drawn onto the wheel.
@@ -265,6 +298,7 @@
     drawButton.addEventListener('click', () => {
       const move = Rc.appendMove(recipe, draft);
       draft = Rc.createMove(move.type);
+      panelShown = move.id; // show the new move's card, to adjust it
       if (move.type === 'circle') startDrawing(move);
       recipeChanged();
       remember();
