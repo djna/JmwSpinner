@@ -225,7 +225,7 @@
 
   const tabs = document.getElementById('tabs');
   const overview = document.getElementById('overview');
-  let panelShown = 'overview'; // 'overview', 'new' or a move id
+  let panelShown = 'new'; // 'overview', 'new' or a move id; New move to start with
 
   function showPanel(which) {
     panelShown = which;
@@ -233,7 +233,7 @@
   }
 
   function renderTabs() {
-    if (typeof panelShown === 'number' && !recipe.moves.some((m) => m.id === panelShown)) panelShown = 'overview';
+    if (typeof panelShown === 'number' && !recipe.moves.some((m) => m.id === panelShown)) panelShown = 'new';
     const entries = [
       ['overview', 'Spin and strobe'],
       ...recipe.moves.map((move) => [move.id, moveName(move)]),
