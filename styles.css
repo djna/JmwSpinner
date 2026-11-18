@@ -24,22 +24,21 @@ header p {
   color: var(--muted);
 }
 
-/* Top row: the next move, the two views, then the strobe controls, solver and readout.
-   Narrower windows put the views first and stack the rest under them. */
+/* The two views, then the side panel. Narrower windows put the panel under the views. */
 .top {
   display: grid;
-  grid-template-columns: minmax(250px, 300px) minmax(0, 1fr) minmax(0, 1fr) minmax(290px, 350px);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(320px, 380px);
   gap: 16px;
   align-items: start;
 }
 
-@media (max-width: 1150px) {
+@media (max-width: 1050px) {
   .top {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
-  .top .wheel {
-    order: -1;
+  .top .side {
+    grid-column: 1 / -1;
   }
 }
 
@@ -164,15 +163,9 @@ select.wide {
   grid-column: span 2;
 }
 
-/* The recipe: a list of move cards, each with its own grid of fields. */
+/* The side panel: undo, save and open, then tabs choosing the one card shown below them. */
 
-fieldset.recipe {
-  display: block;
-  flex: 1 1 100%;
-}
-
-fieldset.recipe > .history {
-  margin-bottom: 10px;
+.side > .history {
   align-items: center;
 }
 
@@ -180,25 +173,48 @@ fieldset.recipe > .history {
   margin-left: 6px;
 }
 
-fieldset.recipe > .note {
-  clear: both;
-  margin: 0 0 10px;
-  padding-top: 4px;
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
+
+.tab {
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.tab[aria-selected="true"] {
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.panel[hidden],
+.move[hidden] {
+  display: none;
+}
+
+#overview:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Move cards, each with its own grid of fields. */
 
 #moves {
   list-style: none;
-  margin: 0 0 12px;
+  margin: 0;
   padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
 }
 
 .move {
-  flex: 0 1 360px;
-  background: var(--bg);
-  border-radius: 6px;
+  background: var(--panel);
+  border-radius: 8px;
   padding: 10px 12px;
 }
 
@@ -308,4 +324,64 @@ details.direct .rates {
   gap: 8px 10px;
   align-items: center;
   margin-top: 8px;
+}
+
+/* Technical view: number boxes and colour codes, hidden by default. A slider then also
+   takes its number box's column. */
+body:not(.technical) .tech-only,
+body:not(.technical) input[type="range"] + input[type="number"] {
+  display: none;
+}
+
+body:not(.technical) input[type="range"]:has(+ input[type="number"]) {
+  grid-column: span 2;
+}
+
+body.technical input[type="color"].wide {
+  grid-column: span 1;
+}
+
+.colour-code {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: ui-monospace, monospace;
+}
+
+.tech-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+}
+
+.tech-toggle[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #222;
+}
+
+.draw-row {
+  margin-top: 10px;
+  align-items: center;
+}
+
+.draft .draw-row button.draw {
+  margin-top: 0;
+}
+
+/* A circle's sets of nibbles, inside its card. */
+.nibbles {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(128, 128, 128, 0.35);
+}
+
+.nibble-set {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border-radius: 6px;
+}
+
+.nibble-set .move-name {
+  font-weight: 500;
 }

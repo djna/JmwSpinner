@@ -56,15 +56,70 @@
     return node;
   }
 
+  // --- Technical view: number boxes beside the sliders, and colour codes beside the colour
+  // pickers. Off by default, since sliders, choices and (later) the wheel itself should be
+  // enough; a calipers button on each card turns it on and off everywhere.
+
+  let technical = false;
+  const CALIPERS = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none"
+    stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M2 4.5h20v3H2z"/><path d="M3.5 7.5V21l3.5-6.5v-7"/>
+    <path d="M13 2.5h6v7h-6z"/><path d="M14 9.5V21l3.5-6.5v-5"/></svg>`;
+
+  function techButton() {
+    const button = el('button', {
+      type: 'button',
+      class: 'tech-toggle',
+      title: 'Show numbers (technical view)',
+      'aria-label': 'Show numbers',
+      'aria-pressed': String(technical),
+    });
+    button.innerHTML = CALIPERS;
+    button.addEventListener('click', () => setTechnical(!technical));
+    return button;
+  }
+
+  function setTechnical(on) {
+    technical = on;
+    document.body.classList.toggle('technical', on);
+    for (const button of document.querySelectorAll('.tech-toggle')) button.setAttribute('aria-pressed', String(on));
+  }
+
+  // Moves proper: everything but nibbles, which are part of their circle.
+  function mainMoves() {
+    return recipe.moves.filter((m) => !Rc.isPart(m));
+  }
+
+  // A move's name, numbered in drawing order (e.g. "2. Ring of marks"). Nibbles are named by
+  // their circle, edge and the way they seem to turn, numbered if two sets share all three.
   function moveName(move) {
-    return `${recipe.moves.indexOf(move) + 1}. ${Rc.MOVE_TYPES[move.type].label}`;
+    if (Rc.isPart(move)) return `${nibbleCircleName(move)}, ${nibbleName(move).toLowerCase()}`;
+    return `${mainMoves().indexOf(move) + 1}. ${Rc.MOVE_TYPES[move.type].label}`;
+  }
+
+  function nibbleCircleName(move) {
+    const circle = Rc.attachedCircle(recipe, move);
+    return circle ? moveName(circle) : 'No circle';
+  }
+
+  const WAYS = { 1: 'clockwise', '-1': 'anticlockwise', 0: 'still' };
+
+  function nibbleName(move) {
+    const circle = Rc.attachedCircle(recipe, move);
+    const way = (m) => Rc.turnWay(m.count, perRev);
+    const same = circle
+      ? Rc.nibblesOf(recipe, circle).filter((m) => m.edge === move.edge && way(m) === way(move))
+      : [move];
+    const edge = move.edge === 'inner' ? 'Inner' : 'Outer';
+    return `${edge} nibbles, ${WAYS[way(move)]}${same.length > 1 ? ` ${same.indexOf(move) + 1}` : ''}`;
   }
 
   // The choices for a reference field: none, or another move of the right kind. A ring
   // shows its count, since rings line up shape for shape when their counts match or divide.
   function refOptions(move, field) {
     if (field.ref === 'circle') {
-      const options = [['', 'nothing (own radius)']];
+      // Nibbles must bite into a circle, so they have no "nothing" choice.
+      const options = Rc.MOVE_TYPES[move.type].needsCircle ? [] : [['', 'nothing (own radius)']];
       for (const m of recipe.moves) if (m.type === 'circle') options.push([m.id, moveName(m)]);
       return options;
     }
@@ -95,10 +150,18 @@
       picker.addEventListener('input', () => {
         if (Rc.setField(move, field.key, picker.value)) onChange();
       });
-      syncList.push(() => {
-        picker.value = move[field.key];
+      // Its code, e.g. #1c1c1f, shown in the technical view.
+      const code = el('input', { type: 'text', class: 'tech-only colour-code', maxlength: 7, spellcheck: 'false' });
+      code.setAttribute('aria-label', `${field.label} code`);
+      code.addEventListener('change', () => {
+        const text = code.value.trim();
+        if (Rc.setField(move, field.key, text.startsWith('#') ? text : `#${text}`)) onChange();
+        code.value = picker.value = move[field.key];
       });
-      return [label, picker];
+      syncList.push(() => {
+        code.value = picker.value = move[field.key];
+      });
+      return [label, picker, code];
     }
 
     if (field.options || field.ref) {
@@ -136,19 +199,9 @@
     return [label, range, box];
   }
 
-  function moveCard(move, index) {
-    const card = el('li', { class: 'move' });
-    const head = el('div', { class: 'move-head' });
-    head.append(el('span', { class: 'move-name' }, moveName(move)));
-
-    const actions = [
-      ...(move.type === 'circle' ? [['↻', 'Draw again', false, () => startDrawing(move)]] : []),
-      ...(Rc.MOVE_TYPES[move.type].wobbly ? [['🎲', 'New wobble', false, () => Rc.rewobble(move)]] : []),
-      ['↑', 'Move up', index === 0, () => Rc.shiftMove(recipe, move.id, -1)],
-      ['↓', 'Move down', index === recipe.moves.length - 1, () => Rc.shiftMove(recipe, move.id, 1)],
-      ['✕', 'Remove', false, () => Rc.removeMove(recipe, move.id)],
-    ];
-    for (const [symbol, title, disabled, act] of actions) {
+  // Buttons that change the recipe, then rebuild the cards and record an undo step.
+  function actionButtons(move, actions) {
+    return actions.map(([symbol, title, disabled, act]) => {
       const button = el('button', { type: 'button', title, 'aria-label': `${title}: ${moveName(move)}` }, symbol);
       button.disabled = disabled;
       button.addEventListener('click', () => {
@@ -156,13 +209,63 @@
         recipeChanged();
         remember();
       });
-      head.append(button);
-    }
-    card.append(head);
+      return button;
+    });
+  }
 
-    card.append(fieldsGrid(move, redrawRecipe, syncs));
+  function moveCard(move, index, list) {
+    const card = el('li', { class: 'move', 'data-id': move.id });
+    const head = el('div', { class: 'move-head' });
+    head.append(el('span', { class: 'move-name' }, moveName(move)));
+    head.append(
+      ...actionButtons(move, [
+        ...(move.type === 'circle' ? [['↻', 'Draw again', false, () => startDrawing(move)]] : []),
+        ...(Rc.MOVE_TYPES[move.type].wobbly ? [['🎲', 'New wobble', false, () => Rc.rewobble(move)]] : []),
+        ['↑', 'Move up', index === 0, () => Rc.shiftMove(recipe, move.id, -1)],
+        ['↓', 'Move down', index === list.length - 1, () => Rc.shiftMove(recipe, move.id, 1)],
+        ['✕', 'Remove', false, () => Rc.removeMove(recipe, move.id)],
+      ]),
+      techButton(),
+    );
+    card.append(head, fieldsGrid(move, redrawRecipe, syncs));
+    if (move.type === 'circle') card.append(nibblesSection(move));
     card.addEventListener('change', remember); // a slider let go, a box or choice changed
     return card;
+  }
+
+  // A circle's sets of nibbles, each with its own fields, and a button to add another.
+  function nibblesSection(circle) {
+    const section = el('div', { class: 'nibbles' });
+    const sets = Rc.nibblesOf(recipe, circle);
+    const head = el('div', { class: 'move-head' });
+    head.append(el('span', { class: 'move-name' }, 'Nibbles'));
+    const [add] = actionButtons(circle, [
+      ['+ Add nibbles', 'Add a set of nibbles', sets.length >= Rc.MAX_NIBBLE_SETS, () => Rc.addNibbles(recipe, circle, perRev)],
+    ]);
+    if (add.disabled) add.title = `A circle can have up to ${Rc.MAX_NIBBLE_SETS} sets of nibbles.`;
+    head.append(add);
+    section.append(head);
+    if (!sets.length) section.append(el('p', { class: 'note' }, 'Bites cut from the edge of this circle.'));
+    for (const set of sets) {
+      const box = el('div', { class: 'nibble-set' });
+      const setHead = el('div', { class: 'move-head' });
+      const name = el('span', { class: 'move-name' }, nibbleName(set));
+      const rename = () => {
+        name.textContent = nibbleName(set); // follows its edge, count and the rates
+      };
+      rename.rates = true;
+      syncs.push(rename);
+      setHead.append(
+        name,
+        ...actionButtons(set, [
+          ['🎲', 'New wobble', false, () => Rc.rewobble(set)],
+          ['✕', 'Remove', false, () => Rc.removeMove(recipe, set.id)],
+        ]),
+      );
+      box.append(setHead, fieldsGrid(set, redrawRecipe, syncs, ['attach']));
+      section.append(box);
+    }
+    return section;
   }
 
   // A stepped ring's flight time: how long a shape takes from inner to outer radius at the
@@ -198,9 +301,10 @@
     return [label, range, box];
   }
 
-  function fieldsGrid(move, onChange, syncList) {
+  function fieldsGrid(move, onChange, syncList, skip = []) {
     const fields = el('div', { class: 'move-fields' });
     for (const field of Rc.MOVE_TYPES[move.type].fields) {
+      if (skip.includes(field.key)) continue;
       fields.append(...fieldControls(move, field, onChange, syncList));
       if (field.key === 'turns') fields.append(...flightControls(move, onChange, syncList));
     }
@@ -215,8 +319,41 @@
 
   function renderCards() {
     syncs = [];
-    movesList.replaceChildren(...recipe.moves.map(moveCard));
+    movesList.replaceChildren(...mainMoves().map(moveCard));
     renderDraft();
+    renderTabs();
+  }
+
+  // --- Panel tabs. The side panel shows one card at a time: the overview (spin and strobe,
+  // readout, count guide, solver), one move's card, or the New move card.
+
+  const tabs = document.getElementById('tabs');
+  const overview = document.getElementById('overview');
+  let panelShown = 'new'; // 'overview', 'new' or a move id; New move to start with
+
+  function showPanel(which) {
+    panelShown = which;
+    renderTabs();
+  }
+
+  function renderTabs() {
+    if (typeof panelShown === 'number' && !mainMoves().some((m) => m.id === panelShown)) panelShown = 'new';
+    const entries = [
+      ['overview', 'Spin and strobe'],
+      ...mainMoves().map((move) => [move.id, moveName(move)]),
+      ['new', '+ New move'],
+    ];
+    tabs.replaceChildren(
+      ...entries.map(([key, text]) => {
+        const tab = el('button', { type: 'button', role: 'tab', class: 'tab', 'aria-selected': String(key === panelShown) }, text);
+        tab.addEventListener('click', () => showPanel(key));
+        return tab;
+      }),
+    );
+    overview.hidden = panelShown !== 'overview';
+    draftCard.hidden = panelShown !== 'new';
+    movesList.hidden = typeof panelShown !== 'number';
+    for (const card of movesList.children) card.hidden = Number(card.dataset.id) !== panelShown;
   }
 
   // --- The next move: chosen and configured here, then drawn onto the wheel.
@@ -242,9 +379,8 @@
       }
       Rc.syncAnchors({ moves: [...recipe.moves, draft] });
     }
-    if ((draft.type === 'nibbles' || draft.type === 'semicircles') && draft.attach === null) {
-      // Nibbles only show in a circle, and semicircles usually sit on one, so start them on
-      // the most recent circle.
+    if (draft.type === 'semicircles' && draft.attach === null) {
+      // Semicircles usually sit on a circle, so start them on the most recent one.
       const circles = recipe.moves.filter((m) => m.type === 'circle');
       if (circles.length) Rc.setField(draft, 'attach', circles[circles.length - 1].id);
     }
@@ -253,7 +389,9 @@
     const head = el('div', { class: 'move-head' });
     const typeLabel = el('label', { for: 'new-move-type', class: 'move-name' }, 'New move');
     const type = el('select', { id: 'new-move-type' });
-    for (const [value, spec] of Object.entries(Rc.MOVE_TYPES)) type.append(el('option', { value }, spec.label));
+    for (const [value, spec] of Object.entries(Rc.MOVE_TYPES)) {
+      if (!spec.needsCircle) type.append(el('option', { value }, spec.label)); // nibbles: on a circle's card
+    }
     type.value = draft.type;
     type.addEventListener('change', () => {
       draft = Rc.createMove(type.value);
@@ -265,12 +403,15 @@
     drawButton.addEventListener('click', () => {
       const move = Rc.appendMove(recipe, draft);
       draft = Rc.createMove(move.type);
+      panelShown = move.id; // show the new move's card, to adjust it
       if (move.type === 'circle') startDrawing(move);
       recipeChanged();
       remember();
     });
 
-    draftCard.replaceChildren(head, fieldsGrid(draft, syncDraft, draftSyncs), drawButton);
+    const drawRow = el('div', { class: 'buttons draw-row' });
+    drawRow.append(drawButton, techButton());
+    draftCard.replaceChildren(head, fieldsGrid(draft, syncDraft, draftSyncs), drawRow);
     syncDraft();
   }
 
@@ -812,6 +953,11 @@
   });
 
   window.addEventListener('resize', rebuildLayers);
+
+  const pauseRow = el('div', { class: 'buttons' });
+  pauseButton.replaceWith(pauseRow);
+  pauseRow.append(pauseButton, techButton());
+  setTechnical(false);
 
   renderCards();
   rebuildLayers();
