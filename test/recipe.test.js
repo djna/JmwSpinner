@@ -518,3 +518,29 @@ test('loading nibbles with no circle attaches them to the latest circle before t
   const alone = R.movesFromSaved(JSON.parse(JSON.stringify([R.createMove('nibbles'), R.createMove('marks')])));
   assert.deepEqual(alone.map((m) => m.type), ['marks']);
 });
+
+test('a circle takes up to six sets of nibbles, listed after it', () => {
+  const recipe = R.defaultRecipe();
+  const circle = R.addMove(recipe, 'circle');
+  const marks = R.addMove(recipe, 'marks');
+  const first = R.addNibbles(recipe, circle);
+  R.setField(first, 'edge', 'inner');
+  const second = R.addNibbles(recipe, circle);
+  assert.equal(second.edge, 'inner'); // as the last set
+  assert.deepEqual(recipe.moves.map((m) => m.id), [circle.id, first.id, second.id, marks.id]);
+  assert.equal(first.attach, circle.id);
+  assert.deepEqual([first.count, second.count], [13, 11]); // opposite drift at 12 per revolution
+  for (let i = 2; i < R.MAX_NIBBLE_SETS; i++) assert.ok(R.addNibbles(recipe, circle));
+  assert.equal(R.addNibbles(recipe, circle), null);
+  assert.equal(R.nibblesOf(recipe, circle).length, 6);
+});
+
+test('moving a move up or down steps past nibbles', () => {
+  const recipe = R.defaultRecipe();
+  const circle = R.addMove(recipe, 'circle');
+  const nibbles = R.addNibbles(recipe, circle);
+  const marks = R.addMove(recipe, 'marks');
+  assert.equal(R.shiftMove(recipe, marks.id, -1), true);
+  assert.deepEqual(recipe.moves.map((m) => m.id), [marks.id, circle.id, nibbles.id]);
+  assert.equal(R.shiftMove(recipe, circle.id, 1), false); // only nibbles after it
+});

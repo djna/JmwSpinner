@@ -85,8 +85,28 @@
     for (const button of document.querySelectorAll('.tech-toggle')) button.setAttribute('aria-pressed', String(on));
   }
 
+  // Moves proper: everything but nibbles, which are part of their circle.
+  function mainMoves() {
+    return recipe.moves.filter((m) => !Rc.isPart(m));
+  }
+
+  // A move's name, numbered in drawing order (e.g. "2. Ring of marks"). Nibbles are named by
+  // their circle and edge, numbered when the edge has more than one set.
   function moveName(move) {
-    return `${recipe.moves.indexOf(move) + 1}. ${Rc.MOVE_TYPES[move.type].label}`;
+    if (Rc.isPart(move)) return `${nibbleCircleName(move)}, ${nibbleName(move).toLowerCase()}`;
+    return `${mainMoves().indexOf(move) + 1}. ${Rc.MOVE_TYPES[move.type].label}`;
+  }
+
+  function nibbleCircleName(move) {
+    const circle = Rc.attachedCircle(recipe, move);
+    return circle ? moveName(circle) : 'No circle';
+  }
+
+  function nibbleName(move) {
+    const circle = Rc.attachedCircle(recipe, move);
+    const same = circle ? Rc.nibblesOf(recipe, circle).filter((m) => m.edge === move.edge) : [move];
+    const edge = move.edge === 'inner' ? 'Inner' : 'Outer';
+    return `${edge} nibbles${same.length > 1 ? ` ${same.indexOf(move) + 1}` : ''}`;
   }
 
   // The choices for a reference field: none, or another move of the right kind. A ring
@@ -174,19 +194,9 @@
     return [label, range, box];
   }
 
-  function moveCard(move, index) {
-    const card = el('li', { class: 'move', 'data-id': move.id });
-    const head = el('div', { class: 'move-head' });
-    head.append(el('span', { class: 'move-name' }, moveName(move)));
-
-    const actions = [
-      ...(move.type === 'circle' ? [['↻', 'Draw again', false, () => startDrawing(move)]] : []),
-      ...(Rc.MOVE_TYPES[move.type].wobbly ? [['🎲', 'New wobble', false, () => Rc.rewobble(move)]] : []),
-      ['↑', 'Move up', index === 0, () => Rc.shiftMove(recipe, move.id, -1)],
-      ['↓', 'Move down', index === recipe.moves.length - 1, () => Rc.shiftMove(recipe, move.id, 1)],
-      ['✕', 'Remove', false, () => Rc.removeMove(recipe, move.id)],
-    ];
-    for (const [symbol, title, disabled, act] of actions) {
+  // Buttons that change the recipe, then rebuild the cards and record an undo step.
+  function actionButtons(move, actions) {
+    return actions.map(([symbol, title, disabled, act]) => {
       const button = el('button', { type: 'button', title, 'aria-label': `${title}: ${moveName(move)}` }, symbol);
       button.disabled = disabled;
       button.addEventListener('click', () => {
@@ -194,14 +204,61 @@
         recipeChanged();
         remember();
       });
-      head.append(button);
-    }
-    head.append(techButton());
-    card.append(head);
+      return button;
+    });
+  }
 
-    card.append(fieldsGrid(move, redrawRecipe, syncs));
+  function moveCard(move, index, list) {
+    const card = el('li', { class: 'move', 'data-id': move.id });
+    const head = el('div', { class: 'move-head' });
+    head.append(el('span', { class: 'move-name' }, moveName(move)));
+    head.append(
+      ...actionButtons(move, [
+        ...(move.type === 'circle' ? [['↻', 'Draw again', false, () => startDrawing(move)]] : []),
+        ...(Rc.MOVE_TYPES[move.type].wobbly ? [['🎲', 'New wobble', false, () => Rc.rewobble(move)]] : []),
+        ['↑', 'Move up', index === 0, () => Rc.shiftMove(recipe, move.id, -1)],
+        ['↓', 'Move down', index === list.length - 1, () => Rc.shiftMove(recipe, move.id, 1)],
+        ['✕', 'Remove', false, () => Rc.removeMove(recipe, move.id)],
+      ]),
+      techButton(),
+    );
+    card.append(head, fieldsGrid(move, redrawRecipe, syncs));
+    if (move.type === 'circle') card.append(nibblesSection(move));
     card.addEventListener('change', remember); // a slider let go, a box or choice changed
     return card;
+  }
+
+  // A circle's sets of nibbles, each with its own fields, and a button to add another.
+  function nibblesSection(circle) {
+    const section = el('div', { class: 'nibbles' });
+    const sets = Rc.nibblesOf(recipe, circle);
+    const head = el('div', { class: 'move-head' });
+    head.append(el('span', { class: 'move-name' }, 'Nibbles'));
+    const [add] = actionButtons(circle, [
+      ['+ Add nibbles', 'Add a set of nibbles', sets.length >= Rc.MAX_NIBBLE_SETS, () => Rc.addNibbles(recipe, circle)],
+    ]);
+    if (add.disabled) add.title = `A circle can have up to ${Rc.MAX_NIBBLE_SETS} sets of nibbles.`;
+    head.append(add);
+    section.append(head);
+    if (!sets.length) section.append(el('p', { class: 'note' }, 'Bites cut from the edge of this circle.'));
+    for (const set of sets) {
+      const box = el('div', { class: 'nibble-set' });
+      const setHead = el('div', { class: 'move-head' });
+      const name = el('span', { class: 'move-name' }, nibbleName(set));
+      syncs.push(() => {
+        name.textContent = nibbleName(set); // follows its edge
+      });
+      setHead.append(
+        name,
+        ...actionButtons(set, [
+          ['🎲', 'New wobble', false, () => Rc.rewobble(set)],
+          ['✕', 'Remove', false, () => Rc.removeMove(recipe, set.id)],
+        ]),
+      );
+      box.append(setHead, fieldsGrid(set, redrawRecipe, syncs, ['attach']));
+      section.append(box);
+    }
+    return section;
   }
 
   // A stepped ring's flight time: how long a shape takes from inner to outer radius at the
@@ -237,9 +294,10 @@
     return [label, range, box];
   }
 
-  function fieldsGrid(move, onChange, syncList) {
+  function fieldsGrid(move, onChange, syncList, skip = []) {
     const fields = el('div', { class: 'move-fields' });
     for (const field of Rc.MOVE_TYPES[move.type].fields) {
+      if (skip.includes(field.key)) continue;
       fields.append(...fieldControls(move, field, onChange, syncList));
       if (field.key === 'turns') fields.append(...flightControls(move, onChange, syncList));
     }
@@ -254,7 +312,7 @@
 
   function renderCards() {
     syncs = [];
-    movesList.replaceChildren(...recipe.moves.map(moveCard));
+    movesList.replaceChildren(...mainMoves().map(moveCard));
     renderDraft();
     renderTabs();
   }
@@ -272,10 +330,10 @@
   }
 
   function renderTabs() {
-    if (typeof panelShown === 'number' && !recipe.moves.some((m) => m.id === panelShown)) panelShown = 'new';
+    if (typeof panelShown === 'number' && !mainMoves().some((m) => m.id === panelShown)) panelShown = 'new';
     const entries = [
       ['overview', 'Spin and strobe'],
-      ...recipe.moves.map((move) => [move.id, moveName(move)]),
+      ...mainMoves().map((move) => [move.id, moveName(move)]),
       ['new', '+ New move'],
     ];
     tabs.replaceChildren(
@@ -314,9 +372,8 @@
       }
       Rc.syncAnchors({ moves: [...recipe.moves, draft] });
     }
-    if ((draft.type === 'nibbles' || draft.type === 'semicircles') && draft.attach === null) {
-      // Nibbles only show in a circle, and semicircles usually sit on one, so start them on
-      // the most recent circle.
+    if (draft.type === 'semicircles' && draft.attach === null) {
+      // Semicircles usually sit on a circle, so start them on the most recent one.
       const circles = recipe.moves.filter((m) => m.type === 'circle');
       if (circles.length) Rc.setField(draft, 'attach', circles[circles.length - 1].id);
     }
@@ -325,7 +382,9 @@
     const head = el('div', { class: 'move-head' });
     const typeLabel = el('label', { for: 'new-move-type', class: 'move-name' }, 'New move');
     const type = el('select', { id: 'new-move-type' });
-    for (const [value, spec] of Object.entries(Rc.MOVE_TYPES)) type.append(el('option', { value }, spec.label));
+    for (const [value, spec] of Object.entries(Rc.MOVE_TYPES)) {
+      if (!spec.needsCircle) type.append(el('option', { value }, spec.label)); // nibbles: on a circle's card
+    }
     type.value = draft.type;
     type.addEventListener('change', () => {
       draft = Rc.createMove(type.value);
@@ -345,10 +404,6 @@
 
     const drawRow = el('div', { class: 'buttons draw-row' });
     drawRow.append(drawButton, techButton());
-    if (Rc.MOVE_TYPES[draft.type].needsCircle && !Rc.attachedCircle(recipe, draft)) {
-      drawButton.disabled = true;
-      drawRow.append(el('span', { class: 'note' }, 'Draw a solid circle first: nibbles bite into one.'));
-    }
     draftCard.replaceChildren(head, fieldsGrid(draft, syncDraft, draftSyncs), drawRow);
     syncDraft();
   }

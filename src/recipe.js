@@ -640,13 +640,42 @@
   }
 
   // Move a move up (delta -1) or down (+1) the list. Later moves draw over earlier ones.
+  // Nibbles are part of their circle (their place in the list doesn't matter, since they are
+  // drawn as holes in it), so a move steps past them to the next move proper.
   function shiftMove(recipe, id, delta) {
     const i = recipe.moves.findIndex((m) => m.id === id);
-    const j = i + delta;
+    let j = i + delta;
+    while (j >= 0 && j < recipe.moves.length && isPart(recipe.moves[j])) j += delta;
     if (i < 0 || j < 0 || j >= recipe.moves.length) return false;
     const [move] = recipe.moves.splice(i, 1);
     recipe.moves.splice(j, 0, move);
     return true;
+  }
+
+  // A move that is part of its circle (nibbles) rather than a move of its own.
+  function isPart(move) {
+    return Boolean(MOVE_TYPES[move.type].needsCircle);
+  }
+
+  // Up to this many sets of nibbles per circle; sets can differ in count, edge and shape,
+  // so they can seem to turn different ways.
+  const MAX_NIBBLE_SETS = 6;
+
+  function nibblesOf(recipe, circle) {
+    return recipe.moves.filter((m) => isPart(m) && m.attach === circle.id);
+  }
+
+  // Add a set of nibbles to a circle, listed after its other sets (or the circle), on the
+  // same edge as the last set. Sets alternate 13 and 11 bites, which drift opposite ways at
+  // 12 flashes per revolution. Null when the circle already has the most sets.
+  function addNibbles(recipe, circle) {
+    const sets = nibblesOf(recipe, circle);
+    if (sets.length >= MAX_NIBBLE_SETS) return null;
+    const move = createMove('nibbles', { attach: circle.id, count: sets.length % 2 ? 11 : 13 });
+    if (sets.length) setField(move, 'edge', sets[sets.length - 1].edge);
+    const last = sets.length ? sets[sets.length - 1] : circle;
+    recipe.moves.splice(recipe.moves.indexOf(last) + 1, 0, move);
+    return move;
   }
 
   // Moves with a mark count: the ones that drift under the strobe.
@@ -702,6 +731,10 @@
     movesFromSaved,
     removeMove,
     shiftMove,
+    isPart,
+    MAX_NIBBLE_SETS,
+    nibblesOf,
+    addNibbles,
     attachedCircle,
     alignedRing,
     phaseOf,
