@@ -101,6 +101,7 @@
       label: 'Ring of nibbles',
       noun: 'nibbles',
       counted: true,
+      needsCircle: true, // bites cut from a circle: nothing to see without one
       fields: [
         COUNT,
         ATTACH,
@@ -372,6 +373,18 @@
       moves.push(move);
       nextId = Math.max(nextId, move.id + 1);
     }
+    // Moves that need a circle but have none (from files saved before that was required) go
+    // on the latest circle drawn before them (else the first after), or are dropped if there
+    // is no circle at all.
+    for (const move of moves.filter((m) => MOVE_TYPES[m.type].needsCircle)) {
+      const circles = moves.filter((m) => m.type === 'circle');
+      if (circles.some((c) => c.id === move.attach)) continue;
+      const at = moves.indexOf(move);
+      const before = circles.filter((c) => moves.indexOf(c) < at);
+      const circle = before.length ? before[before.length - 1] : circles[0];
+      if (circle) move.attach = circle.id;
+      else removeMove({ moves }, move.id);
+    }
     return moves;
   }
 
@@ -390,10 +403,15 @@
     return move;
   }
 
+  // Remove a move. Moves that refer to it let go, except those that need a circle (nibbles),
+  // which go with their circle.
   function removeMove(recipe, id) {
     const i = recipe.moves.findIndex((m) => m.id === id);
     if (i < 0) return false;
     recipe.moves.splice(i, 1);
+    for (const m of recipe.moves.filter((n) => n.attach === id && MOVE_TYPES[n.type].needsCircle)) {
+      removeMove(recipe, m.id);
+    }
     for (const m of recipe.moves) {
       if (m.attach === id) m.attach = null;
       if (m.align === id) m.align = null;

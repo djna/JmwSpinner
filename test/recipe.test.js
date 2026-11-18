@@ -493,3 +493,28 @@ test('turnsForFlight inverts the flight of a stepped ring', () => {
   assert.equal(R.spiralReading(doubled, step).flashes, 36);
   assert.equal(R.turnsForFlight(R.createMove('stepped', { count: 5 }), step, 36), null); // skips none
 });
+
+test('removing a circle removes the nibbles cut from it', () => {
+  const recipe = R.defaultRecipe();
+  const circle = R.addMove(recipe, 'circle');
+  const other = R.addMove(recipe, 'circle');
+  const nibbles = R.addMove(recipe, 'nibbles');
+  R.setField(nibbles, 'attach', circle.id);
+  const kept = R.addMove(recipe, 'nibbles');
+  R.setField(kept, 'attach', other.id);
+  const marks = R.addMove(recipe, 'marks');
+  R.setField(marks, 'align', nibbles.id);
+  R.removeMove(recipe, circle.id);
+  assert.deepEqual(recipe.moves.map((m) => m.id), [other.id, kept.id, marks.id]);
+  assert.equal(marks.align, null); // let go of the removed nibbles
+});
+
+test('loading nibbles with no circle attaches them to the latest circle before them, or drops them', () => {
+  const first = R.createMove('circle');
+  const second = R.createMove('circle');
+  const loaded = R.movesFromSaved(JSON.parse(JSON.stringify([R.createMove('nibbles'), first, R.createMove('nibbles'), second])));
+  assert.equal(loaded[0].attach, first.id); // none before it: the first circle
+  assert.equal(loaded[2].attach, first.id);
+  const alone = R.movesFromSaved(JSON.parse(JSON.stringify([R.createMove('nibbles'), R.createMove('marks')])));
+  assert.deepEqual(alone.map((m) => m.type), ['marks']);
+});

@@ -93,7 +93,8 @@
   // shows its count, since rings line up shape for shape when their counts match or divide.
   function refOptions(move, field) {
     if (field.ref === 'circle') {
-      const options = [['', 'nothing (own radius)']];
+      // Nibbles must bite into a circle, so they have no "nothing" choice.
+      const options = Rc.MOVE_TYPES[move.type].needsCircle ? [] : [['', 'nothing (own radius)']];
       for (const m of recipe.moves) if (m.type === 'circle') options.push([m.id, moveName(m)]);
       return options;
     }
@@ -344,6 +345,10 @@
 
     const drawRow = el('div', { class: 'buttons draw-row' });
     drawRow.append(drawButton, techButton());
+    if (Rc.MOVE_TYPES[draft.type].needsCircle && !Rc.attachedCircle(recipe, draft)) {
+      drawButton.disabled = true;
+      drawRow.append(el('span', { class: 'note' }, 'Draw a solid circle first: nibbles bite into one.'));
+    }
     draftCard.replaceChildren(head, fieldsGrid(draft, syncDraft, draftSyncs), drawRow);
     syncDraft();
   }
