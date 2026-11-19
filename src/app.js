@@ -138,6 +138,97 @@
     for (const input of inputs) input.disabled = inactive;
   }
 
+  // A square to draw a freeform shape in, shown while the shape is freeform. Up is towards
+  // the rim. Each stroke is added when the pen lifts (one undo step), and the pad shows
+  // the pen width and colour in proportion to the shape's length.
+  function drawingPad(move, field, onChange, syncList) {
+    const wrap = el('div', { class: 'drawing-pad' });
+    const canvas = el('canvas', { class: 'pad' });
+    canvas.setAttribute('aria-label', 'Draw the shape: up is towards the rim');
+    const clear = el('button', { type: 'button' }, 'Clear');
+    clear.addEventListener('click', () => {
+      if (Rc.setField(move, field.key, null)) onChange();
+      paint();
+      wrap.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const note = el('p', { class: 'note' }, 'Draw one shape. Up is towards the rim.');
+    const side = el('div', { class: 'pad-side' });
+    side.append(note, clear);
+    wrap.append(canvas, side);
+
+    let stroke = null; // the stroke being drawn, as points in the square from -1 to 1
+    const toSquare = (event) => {
+      const box = canvas.getBoundingClientRect();
+      return [((event.clientX - box.left) / box.width) * 2 - 1, ((event.clientY - box.top) / box.height) * 2 - 1];
+    };
+    canvas.addEventListener('pointerdown', (event) => {
+      try {
+        canvas.setPointerCapture(event.pointerId); // keep the stroke if the pen strays off the pad
+      } catch {}
+      stroke = [toSquare(event)];
+      paint();
+    });
+    canvas.addEventListener('pointermove', (event) => {
+      if (!stroke) return;
+      stroke.push(toSquare(event));
+      paint();
+    });
+    const finish = () => {
+      if (!stroke) return;
+      const done = Rc.simplifyStroke(stroke, 0.008);
+      stroke = null;
+      if (Rc.setField(move, field.key, [...(move.drawing || []), done])) onChange();
+      paint();
+      wrap.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    canvas.addEventListener('pointerup', finish);
+    canvas.addEventListener('pointercancel', finish);
+
+    function paint() {
+      const size = Math.round(canvas.clientWidth * (window.devicePixelRatio || 1));
+      if (!size) return;
+      if (canvas.width !== size) canvas.width = canvas.height = size;
+      const c = canvas.getContext('2d');
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.clearRect(0, 0, size, size);
+      c.fillStyle = '#fafaf5';
+      c.fillRect(0, 0, size, size);
+      // Guides: a centre cross, and an arrow pointing to the rim.
+      c.strokeStyle = 'rgba(0, 0, 0, 0.15)';
+      c.lineWidth = 1;
+      c.beginPath();
+      c.moveTo(size / 2, 0);
+      c.lineTo(size / 2, size);
+      c.moveTo(0, size / 2);
+      c.lineTo(size, size / 2);
+      c.stroke();
+      c.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      c.font = `${Math.round(size / 16)}px system-ui, sans-serif`;
+      c.textAlign = 'right';
+      c.fillText('↑ rim', size - 6, size / 12);
+      // The strokes, in the move's colour and width.
+      c.setTransform(size / 2, 0, 0, size / 2, size / 2, size / 2);
+      c.beginPath();
+      for (const points of [...(move.drawing || []), ...(stroke ? [stroke] : [])]) {
+        c.moveTo(...points[0]);
+        for (const point of points.slice(1)) c.lineTo(...point);
+        if (points.length === 1) c.lineTo(...points[0]);
+      }
+      c.lineCap = 'round';
+      c.lineJoin = 'round';
+      c.strokeStyle = move.colour || '#1d1d24';
+      c.lineWidth = Math.max(0.02, (2 * move.width) / move.length);
+      c.stroke();
+    }
+    wrap.paint = paint;
+
+    syncList.push(() => {
+      wrap.hidden = Rc.fieldInactive(recipe, move, field.key);
+      requestAnimationFrame(paint); // once shown, so it has a size
+    });
+    return wrap;
+  }
+
   // The controls for one field: a label, then a slider and number box kept in sync
   // (as in bindControl below), or a choice list. `onChange` runs after the field changes,
   // and a function that refreshes the controls from the move is added to `syncList`.
@@ -164,6 +255,8 @@
       });
       return [label, picker, code];
     }
+
+    if (field.drawing) return [drawingPad(move, field, onChange, syncList)];
 
     if (field.cycle) {
       const choices = field.options.map(([value, text, short]) => [value, short || text, text]);
@@ -471,6 +564,10 @@
         continue;
       }
       const controls = fieldControls(move, field, onChange, syncList);
+      if (field.drawing) {
+        // Keep the pad's pen width, length and colour up to date as their controls move.
+        for (const type of ['input', 'change']) fields.addEventListener(type, controls[0].paint);
+      }
       if (field.cycle) {
         // Neighbouring cycling choices share one line.
         let row = fields.lastElementChild;

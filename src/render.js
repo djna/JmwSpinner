@@ -78,6 +78,26 @@
     c.stroke();
   }
 
+  // A freeform drawing (see the marks' `drawing` field): its strokes in a square of side
+  // `length`, up in the square pointing away from the centre.
+  function drawingAt(c, r, theta, length, width, drawing, j) {
+    c.save();
+    c.translate(r * Math.cos(theta), r * Math.sin(theta));
+    c.rotate(theta + Math.PI / 2 + j.tilt); // local -y now points away from the centre
+    c.scale((length * j.scale) / 2, (length * j.scale) / 2);
+    c.beginPath();
+    for (const stroke of drawing) {
+      c.moveTo(...stroke[0]);
+      for (const point of stroke.slice(1)) c.lineTo(...point);
+    }
+    c.restore(); // the path keeps its shape; the pen width is in wheel units
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    c.strokeStyle = ink;
+    c.lineWidth = width * j.width;
+    c.stroke();
+  }
+
   // A semicircle whose flat side lies along the ring, bulging in towards the centre or out.
   function semicircleAt(c, r, theta, size, width, bulge, j) {
     // Angles on the ellipse are measured from its outward radial axis.
@@ -165,14 +185,18 @@
     c.closePath();
   }
 
-  // A ring of short radial marks, evenly spaced, starting at the top (or at `phase`).
-  // With wobble, each is slightly off in place, length, tilt and pen width.
+  // A ring of short radial marks, or of a freeform drawing, evenly spaced, starting at the
+  // top (or at `phase`). With wobble, each is slightly off in place, length, tilt and pen width.
   function drawMarkRing(c, move) {
+    const freeform = move.shape === 'freeform';
+    if (freeform && !move.drawing) return; // nothing drawn yet
     const spacing = TAU / move.count;
     for (let k = 0; k < move.count; k++) {
       const j = wobbleOf(move, k);
       const theta = (k + j.angle) * spacing + (move.phase || 0) - Math.PI / 2;
-      markAt(c, move.radius + j.radial * move.length, theta, move.length, move.width, j);
+      const r = move.radius + j.radial * move.length;
+      if (freeform) drawingAt(c, r, theta, move.length, move.width, move.drawing, j);
+      else markAt(c, r, theta, move.length, move.width, j);
     }
   }
 

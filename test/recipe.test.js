@@ -571,3 +571,36 @@ test('a ring is offered only rings whose counts fit to line up with', () => {
   assert.deepEqual(ids(odd), []);
   assert.ok(R.countsFit(13, 26) && R.countsFit(6, 12) && !R.countsFit(11, 13));
 });
+
+test('freeform marks: drawings are cleaned, and a first switch suits the pen to drawing', () => {
+  const move = R.createMove('marks');
+  assert.equal(move.shape, 'line');
+  assert.equal(move.drawing, null);
+  assert.equal(R.setField(move, 'shape', 'freeform'), true);
+  assert.equal(move.length, 0.16);
+  assert.equal(move.width, 0.012);
+  assert.equal(R.setField(move, 'drawing', [[[0.12345, 2], [-0.5, -0.5]], [[0.1, 0.1]]]), true);
+  assert.deepEqual(move.drawing, [[[0.123, 1], [-0.5, -0.5]], [[0.1, 0.1], [0.1, 0.1]]]);
+  assert.equal(R.setField(move, 'drawing', 'scribble'), false);
+  assert.equal(R.setField(move, 'drawing', [[[0, 'x']]]), false);
+  assert.equal(R.setField(move, 'drawing', []), true);
+  assert.equal(move.drawing, null);
+  assert.equal(R.fieldInactive({ moves: [move] }, move, 'drawing'), false);
+  R.setField(move, 'shape', 'line');
+  assert.equal(R.fieldInactive({ moves: [move] }, move, 'drawing'), true);
+});
+
+test('simplifyStroke keeps corners and drops points along straight runs', () => {
+  const run = [];
+  for (let i = 0; i <= 10; i++) run.push([i / 10, 0]);
+  for (let i = 1; i <= 10; i++) run.push([1, i / 10]);
+  assert.deepEqual(R.simplifyStroke(run), [[0, 0], [1, 0], [1, 1]]);
+  assert.deepEqual(R.simplifyStroke([[0, 0]]), [[0, 0]]);
+});
+
+test('a saved freeform drawing survives saving and opening', () => {
+  const move = R.createMove('marks', { shape: 'freeform', drawing: [[[0, -1], [0, 1]]] });
+  const [back] = R.movesFromSaved(JSON.parse(JSON.stringify([move])));
+  assert.equal(back.shape, 'freeform');
+  assert.deepEqual(back.drawing, [[[0, -1], [0, 1]]]);
+});

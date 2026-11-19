@@ -48,6 +48,18 @@
       counted: true,
       fields: [
         COUNT,
+        {
+          key: 'shape',
+          label: 'Shape',
+          cycle: true,
+          options: [
+            ['line', 'line'],
+            ['freeform', 'freeform'],
+          ],
+        },
+        // Freeform: strokes drawn by hand, each a list of [x, y] points in a square from
+        // -1 to 1, with -y pointing away from the centre. Length is the square's side.
+        { key: 'drawing', label: 'Drawing', drawing: true },
         RADIUS,
         { key: 'length', label: 'Length', min: 0.02, max: 0.3, step: 0.005 },
         { key: 'width', label: 'Pen width', min: 0.005, max: 0.1, step: 0.005 },
@@ -56,7 +68,7 @@
         WOBBLE,
         COLOUR,
       ],
-      defaults: { count: 11, radius: 0.8, length: 0.1, width: 0.03, align: null, offset: 0, wobble: 0.3, colour: INK },
+      defaults: { count: 11, shape: 'line', drawing: null, radius: 0.8, length: 0.1, width: 0.03, align: null, offset: 0, wobble: 0.3, colour: INK },
       wobbly: true,
     },
     semicircles: {
@@ -309,6 +321,12 @@
       move[key] = id;
       return true;
     }
+    if (field.drawing) {
+      const drawing = cleanDrawing(value);
+      if (drawing === undefined) return false;
+      move[key] = drawing;
+      return true;
+    }
     if (field.colour) {
       if (typeof value !== 'string' || !/^#[0-9a-f]{6}$/i.test(value)) return false;
       move[key] = value.toLowerCase();
@@ -316,6 +334,11 @@
     }
     if (field.options) {
       if (!field.options.some(([v]) => v === value)) return false;
+      if (move.type === 'marks' && key === 'shape' && value === 'freeform' && !move.drawing) {
+        // A drawing wants more room and a finer pen than a line.
+        move.length = Math.max(move.length, 0.16);
+        move.width = Math.min(move.width, 0.012);
+      }
       move[key] = value;
       return true;
     }
@@ -324,6 +347,49 @@
     if (field.integer) v = Math.round(v);
     move[key] = field.signed ? v : Math.max(field.min, v);
     return true;
+  }
+
+  // A freeform drawing, kept valid: a list of strokes, each of at least two [x, y] points
+  // inside the square from -1 to 1, rounded to 3 places. Null (or no strokes) is no
+  // drawing; anything else unreadable gives undefined.
+  const MAX_STROKES = 60;
+  const MAX_POINTS = 400;
+  function cleanDrawing(value) {
+    if (value === null || value === undefined) return null;
+    if (!Array.isArray(value)) return undefined;
+    const round = (v) => Math.round(Math.max(-1, Math.min(1, v)) * 1000) / 1000;
+    const strokes = [];
+    for (const stroke of value.slice(0, MAX_STROKES)) {
+      if (!Array.isArray(stroke)) return undefined;
+      const points = [];
+      for (const point of stroke.slice(0, MAX_POINTS)) {
+        if (!Array.isArray(point) || !point.slice(0, 2).every(Number.isFinite) || point.length < 2) return undefined;
+        points.push([round(point[0]), round(point[1])]);
+      }
+      if (points.length) strokes.push(points.length === 1 ? [points[0], points[0]] : points);
+    }
+    return strokes.length ? strokes : null;
+  }
+
+  // Fewer points for a stroke drawn by hand, keeping its shape to within `tolerance`
+  // (Ramer-Douglas-Peucker).
+  function simplifyStroke(points, tolerance = 0.01) {
+    if (points.length < 3) return points.slice();
+    const [ax, ay] = points[0];
+    const [bx, by] = points[points.length - 1];
+    const dx = bx - ax;
+    const dy = by - ay;
+    const span = Math.hypot(dx, dy);
+    let far = 0;
+    let at = 0;
+    for (let i = 1; i < points.length - 1; i++) {
+      const [px, py] = points[i];
+      const d = span ? Math.abs(dy * (px - ax) - dx * (py - ay)) / span : Math.hypot(px - ax, py - ay);
+      if (d > far) [far, at] = [d, i];
+    }
+    if (far <= tolerance) return [points[0], points[points.length - 1]];
+    const left = simplifyStroke(points.slice(0, at + 1), tolerance);
+    return [...left.slice(0, -1), ...simplifyStroke(points.slice(at), tolerance)];
   }
 
   // A small seeded random generator (mulberry32), so a move's wobble is the same every redraw.
@@ -543,6 +609,7 @@
     const attached = attachedCircle(recipe, move) !== null;
     if (key === 'radius') return attached;
     if (key === 'edge') return !attached;
+    if (key === 'drawing') return move.shape !== 'freeform';
     if (move.type === 'stepped') {
       const starts = startRing(recipe, move) !== null;
       if (key === 'inner') return starts;
@@ -787,6 +854,8 @@
     steppedInner,
     shownValue,
     fieldInactive,
+    cleanDrawing,
+    simplifyStroke,
     steppedRadii,
     flapOf,
     spiralReading,

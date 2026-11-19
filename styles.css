@@ -485,3 +485,27 @@ button.cycle:disabled {
   color: var(--muted);
   cursor: default;
 }
+
+/* A freeform shape, drawn by hand: the pad, then a note and Clear beside it. */
+.drawing-pad {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.drawing-pad canvas.pad {
+  width: 180px;
+  max-width: 60%;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.pad-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
