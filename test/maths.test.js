@@ -91,3 +91,25 @@ test('countGuide sorts counts by motion at 12 flashes per revolution', () => {
   assert.deepEqual(g.unclear, [4, 8, 16, 20, 28]);
   assert.deepEqual(g.ambiguous, [5, 6, 7, 17, 18, 19, 29, 30]);
 });
+
+test('countFor turns an intent into a count', () => {
+  assert.deepEqual([1, 2, 3].map((s) => M.countFor(1, 1, s, 12)), [13, 14, 15]);
+  assert.deepEqual([1, 2, 3].map((s) => M.countFor(1, -1, s, 12)), [11, 10, 9]);
+  assert.deepEqual([1, 2, 3].map((d) => M.countFor(d, 0, 1, 12)), [12, 24, 36]);
+  assert.equal(M.countFor(2, 1, 1, 12), 25);
+  assert.equal(M.countFor(3, -1, 2, 12), 34);
+  assert.equal(M.countFor(1, 1, 1, 30 / 2.5000001), 13); // a hair under 12 still counts as 12
+  assert.deepEqual([M.countFor(1, 1, 1, 12.5), M.countFor(1, -1, 1, 12.5)], [13, 12]);
+  // Each moves its speed in twelfths of a spacing per flash, the way it says.
+  close(M.driftFraction(12, M.countFor(2, -1, 3, 12)), -3 / 12);
+});
+
+test('countIntent reads a count back as an intent, or null', () => {
+  assert.deepEqual(M.countIntent(10, 12), { density: 1, way: -1, speed: 2 });
+  assert.deepEqual(M.countIntent(24, 12), { density: 2, way: 0, speed: 1 });
+  assert.deepEqual(M.countIntent(37, 12), { density: 3, way: 1, speed: 1 });
+  assert.equal(M.countIntent(18, 12), null);
+  assert.equal(M.countIntent(5, 12), null);
+  assert.deepEqual(M.nearestIntent(18, 12), { density: 2, way: -1, speed: 3 });
+  assert.deepEqual(M.nearestIntent(5, 12), { density: 1, way: -1, speed: 3 });
+});

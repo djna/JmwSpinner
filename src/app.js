@@ -353,12 +353,67 @@
     return [label, select, placeLabel, place, ...offset];
   }
 
+  // A ring's count by intent: how many shapes (about 1, 2 or 3 times the flashes per
+  // revolution), which way they seem to turn, and how fast. Each choice sets the count, and
+  // the choices are read back from it at the current rates. A count that matches no intent
+  // (or the technical view) shows the count slider too. Anchored wings take their anchor's.
+  const INTENT_CHOICES = {
+    density: [[1, 'few'], [2, 'more'], [3, 'lots']],
+    way: [[1, 'clockwise'], [-1, 'anticlockwise'], [0, 'still']],
+    speed: [[1, 'slow'], [2, 'fast'], [3, 'very fast']],
+  };
+  const INTENT_LABELS = { density: 'How many', way: 'Direction', speed: 'Speed' };
+
+  function countControls(move, field, onChange, syncList) {
+    const rows = {};
+    for (const key of Object.keys(INTENT_CHOICES)) {
+      const id = `move${move.id}-${key}`;
+      const label = el('label', { for: id }, INTENT_LABELS[key]);
+      const select = el('select', { id, class: 'wide' });
+      select.addEventListener('change', () => {
+        const intent = { ...(M.countIntent(move.count, perRev) || M.nearestIntent(move.count, perRev)) };
+        intent[key] = Number(select.value);
+        sliding = false;
+        if (Rc.setField(move, 'count', M.countFor(intent.density, intent.way, intent.speed, perRev))) onChange();
+        show();
+      });
+      rows[key] = { label, select };
+    }
+    const count = fieldControls(move, field, onChange, syncList); // label, slider, box
+    // Once the slider is in use, it stays while it passes counts that match an intent.
+    let sliding = false;
+    for (const type of ['pointerdown', 'keydown']) count[1].addEventListener(type, () => (sliding = true));
+
+    const show = () => {
+      const intent = M.countIntent(move.count, perRev);
+      const inactive = Rc.fieldInactive(recipe, move, 'count');
+      for (const [key, { label, select }] of Object.entries(rows)) {
+        const choices = INTENT_CHOICES[key].map(([value, text]) =>
+          key === 'density' ? [value, `${text} (about ${Math.round(value * perRev)})`] : [value, text],
+        );
+        if (!intent) choices.unshift(['', '—']);
+        select.replaceChildren(...choices.map(([value, text]) => el('option', { value }, text)));
+        select.value = intent ? intent[key] : '';
+        const hide = inactive || (key === 'speed' && intent && intent.way === 0);
+        label.hidden = select.hidden = hide;
+      }
+      for (const node of count) node.hidden = !technical && (inactive || (intent !== null && !sliding));
+    };
+    show.rates = true; // the intent depends on flashes per revolution
+    syncList.push(show);
+    return [...Object.values(rows).flatMap(({ label, select }) => [label, select]), ...count];
+  }
+
   function fieldsGrid(move, onChange, syncList, skip = []) {
     const fields = el('div', { class: 'move-fields' });
     for (const field of Rc.MOVE_TYPES[move.type].fields) {
       if (skip.includes(field.key) || field.key === 'offset') continue; // offset: with Line up with
       if (field.key === 'align') {
         fields.append(...lineUpControls(move, onChange, syncList));
+        continue;
+      }
+      if (field.key === 'count') {
+        fields.append(...countControls(move, field, onChange, syncList));
         continue;
       }
       fields.append(...fieldControls(move, field, onChange, syncList));
