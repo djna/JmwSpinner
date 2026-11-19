@@ -384,17 +384,46 @@
     return [label, group];
   }
 
+  // A button that steps through its choices on each click (shift-click steps back), with a
+  // small caption above saying what it sets. Several sit side by side on one line.
+  // `pick(value)` runs with the next choice; a change event then bubbles up, so the card
+  // records an undo step. Returns the cell, with `choose(value, guessed)` to show a value:
+  // guessed shows the nearest choice dimmed, and a click then takes that choice first.
+  function cycler(id, caption, choices, pick) {
+    const button = el('button', { id, type: 'button', class: 'cycle' });
+    const cell = el('div', { class: 'cycle-cell' });
+    cell.append(el('label', { for: id, class: 'cycle-caption' }, caption), button);
+    let index = 0;
+    let guessed = false;
+    button.addEventListener('click', (event) => {
+      const next = guessed ? index : (index + (event.shiftKey ? choices.length - 1 : 1)) % choices.length;
+      pick(choices[next][0]);
+      button.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    cell.choose = (value, guess = false) => {
+      index = Math.max(0, choices.findIndex(([v]) => String(v) === String(value)));
+      guessed = guess;
+      const [, text, title] = choices[index];
+      button.textContent = text;
+      button.classList.toggle('guessed', guess);
+      button.title = guess ? `nearest: ${text}. Click to use it` : `${title || text}. Click for ${choices[(index + 1) % choices.length][1]}`;
+    };
+    cell.button = button;
+    return cell;
+  }
+
   function countControls(move, field, onChange, syncList) {
-    const rows = {};
+    const cells = {};
+    const row = el('div', { class: 'cycles' });
     for (const key of Object.keys(INTENT_CHOICES)) {
-      const [label, group] = segmented(`move${move.id}-${key}`, INTENT_LABELS[key], INTENT_CHOICES[key], (value) => {
+      cells[key] = cycler(`move${move.id}-${key}`, INTENT_LABELS[key], INTENT_CHOICES[key], (value) => {
         const intent = { ...(M.countIntent(move.count, perRev) || M.nearestIntent(move.count, perRev)) };
         intent[key] = value;
         sliding = false;
         if (Rc.setField(move, 'count', M.countFor(intent.density, intent.way, intent.speed, perRev))) onChange();
         show();
       });
-      rows[key] = { label, select: group };
+      row.append(cells[key]);
     }
     const count = fieldControls(move, field, onChange, syncList); // label, slider, box
     // Once the slider is in use, it stays while it passes counts that match an intent.
@@ -403,20 +432,17 @@
 
     const show = () => {
       const intent = M.countIntent(move.count, perRev);
+      const shown = intent || M.nearestIntent(move.count, perRev); // none matches: the nearest, dimmed
       const inactive = Rc.fieldInactive(recipe, move, 'count');
-      for (const [key, { label, select }] of Object.entries(rows)) {
-        if (key === 'density') {
-          select.buttons.forEach((button, i) => (button.title = `about ${Math.round((i + 1) * perRev)}`));
-        }
-        select.choose(intent ? intent[key] : null); // none chosen: the count matches no intent
-        const hide = inactive || (key === 'speed' && intent && intent.way === 0);
-        label.hidden = select.hidden = hide;
-      }
+      for (const [key, cell] of Object.entries(cells)) cell.choose(shown[key], !intent);
+      cells.density.button.title += ` (about ${Math.round(shown.density * perRev)} at these rates)`;
+      cells.speed.classList.toggle('unused', shown.way === 0); // still: no speed
+      row.hidden = inactive;
       for (const node of count) node.hidden = !technical && (inactive || (intent !== null && !sliding));
     };
     show.rates = true; // the intent depends on flashes per revolution
     syncList.push(show);
-    return [...Object.values(rows).flatMap(({ label, select }) => [label, select]), ...count];
+    return [row, ...count];
   }
 
   function fieldsGrid(move, onChange, syncList, skip = []) {

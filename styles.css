@@ -431,3 +431,51 @@ body.technical input[type="color"].wide {
   color: #222;
   font-weight: 600;
 }
+
+/* Choices that step on each click, side by side, each with a small caption above. */
+.cycles {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cycle-cell {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cycle-cell.unused {
+  visibility: hidden;
+}
+
+.cycle-caption {
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-align: center;
+  white-space: nowrap;
+}
+
+button.cycle {
+  padding: 3px 3px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+button.cycle.guessed {
+  border-style: dashed;
+  border-color: var(--muted);
+  color: var(--muted);
+  font-weight: normal;
+}
