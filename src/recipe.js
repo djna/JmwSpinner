@@ -86,13 +86,17 @@
         // Key B is drawn on the same pad, stroke by stroke matching key A.
         { key: 'drawing', label: 'Drawing', drawing: true },
         { key: 'keyB', label: 'Key B', drawing: true, onPad: true },
+        // Key B's pen, or null to follow key A's (the ring's own width and colour). Once
+        // animated, both keys' pens are set on the pad, and blended between them.
+        { key: 'widthB', label: 'Pen width', min: 0.005, max: 0.1, step: 0.005, nullable: true, onPad: true },
+        { key: 'colourB', label: 'Colour', colour: true, nullable: true, onPad: true },
         RADIUS,
         { key: 'length', label: 'Length', min: 0.02, max: 0.3, step: 0.005 },
-        { key: 'width', label: 'Pen width', min: 0.005, max: 0.1, step: 0.005 },
+        { key: 'width', label: 'Pen width', min: 0.005, max: 0.1, step: 0.005, shown: (move) => !animated(move) },
         ALIGN,
         OFFSET,
         { ...WOBBLE, shown: (move) => !animated(move) }, // animation takes its place
-        COLOUR,
+        { ...COLOUR, shown: (move) => !animated(move) },
       ],
       defaults: {
         count: 11,
@@ -102,6 +106,8 @@
         repeats: 1,
         drawing: null,
         keyB: null,
+        widthB: null,
+        colourB: null,
         radius: 0.8,
         length: 0.1,
         width: 0.03,
@@ -356,6 +362,10 @@
   function setField(move, key, value) {
     const field = MOVE_TYPES[move.type].fields.find((f) => f.key === key);
     if (!field) return false;
+    if (field.nullable && (value === null || value === '')) {
+      move[key] = null;
+      return true;
+    }
     if (field.ref) {
       const id = value === null || value === '' ? null : Number(value);
       if (id !== null && (!Number.isInteger(id) || id === move.id)) return false;
@@ -452,7 +462,8 @@
   // the same, so it does not matter which neighbour the strobe brings next. A ring that
   // does not animate gives key A at every mark.
   function animationOf(move) {
-    if (!animated(move)) return { frames: 1, at: () => move.drawing, keyB: null };
+    const pens = keyPens(move);
+    if (!animated(move)) return { frames: 1, at: () => move.drawing, pen: () => pens.A, keyB: null };
     const frames = move.count / repeatsOf(move);
     const half = Math.floor(frames / 2);
     const pairs = pairStrokes(move.drawing, move.keyB);
@@ -465,7 +476,31 @@
       const u = f <= half ? f / half : (frames - f) / (frames - half);
       return move.easing === 'even' ? u : (1 - Math.cos(Math.PI * u)) / 2;
     };
-    return { frames, keyB: half, amount: (k) => amount(k % frames), at: (k) => blend(amount(k % frames)) };
+    const pen = (u) => ({
+      width: pens.A.width + (pens.B.width - pens.A.width) * u,
+      colour: mixColour(pens.A.colour, pens.B.colour, u),
+    });
+    return {
+      frames,
+      keyB: half,
+      amount: (k) => amount(k % frames),
+      at: (k) => blend(amount(k % frames)),
+      pen: (k) => pen(amount(k % frames)),
+    };
+  }
+
+  // Each key's pen: key A's is the ring's width and colour, key B's its own or else A's.
+  function keyPens(move) {
+    const A = { width: move.width, colour: move.colour || INK };
+    return { A, B: { width: move.widthB ?? A.width, colour: move.colourB ?? A.colour } };
+  }
+
+  // A colour `u` of the way from #rrggbb `a` to `b`.
+  function mixColour(a, b, u) {
+    if (a === b) return a;
+    const channels = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    const [ca, cb] = [channels(a), channels(b)];
+    return `#${ca.map((v, i) => Math.round(v + (cb[i] - v) * u).toString(16).padStart(2, '0')).join('')}`;
   }
 
   // A freeform drawing, kept valid: a list of strokes, each of at least two [x, y] points
@@ -980,6 +1015,8 @@
     resample,
     pairStrokes,
     animationOf,
+    keyPens,
+    mixColour,
     simplifyStroke,
     steppedRadii,
     flapOf,

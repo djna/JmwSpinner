@@ -648,3 +648,22 @@ test('pairStrokes leaves strokes of A with no partner in B as they are', () => {
   assert.deepEqual(pairs[1], { still: a[1] });
   assert.deepEqual(R.resample([[0, 0], [1, 0], [1, 1]], 5), [[0, 0], [0.5, 0], [1, 0], [1, 0.5], [1, 1]]);
 });
+
+test('each key has its own pen, blended through the frames; key B follows A until set', () => {
+  const move = R.createMove('marks', { count: 12, shape: 'freeform', motion: 'swing', easing: 'even' });
+  R.setField(move, 'drawing', [[[0, -1], [0, 1]]]);
+  R.setField(move, 'keyB', [[[1, -1], [1, 1]]]);
+  R.setField(move, 'colour', '#000000');
+  assert.deepEqual(R.keyPens(move).B, { width: move.width, colour: '#000000' }); // follows A
+  R.setField(move, 'widthB', 0.05);
+  R.setField(move, 'colourB', '#ff8800');
+  const animation = R.animationOf(move);
+  assert.deepEqual(animation.pen(0), { width: move.width, colour: '#000000' });
+  assert.deepEqual(animation.pen(6), { width: 0.05, colour: '#ff8800' });
+  assert.equal(animation.pen(3).colour, '#804400');
+  assert.ok(Math.abs(animation.pen(3).width - (move.width + 0.05) / 2) < 1e-12);
+  assert.equal(R.setField(move, 'colourB', null), true); // back to following A
+  assert.equal(R.keyPens(move).B.colour, '#000000');
+  const widthField = R.MOVE_TYPES.marks.fields.find((f) => f.key === 'width');
+  assert.equal(widthField.shown(move), false); // set on the pad instead
+});

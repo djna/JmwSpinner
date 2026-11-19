@@ -505,6 +505,8 @@ button.cycle:disabled {
 }
 
 .pad-side {
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -584,4 +586,32 @@ button.cycle:disabled {
 
 .frame[aria-pressed="true"] {
   border-color: var(--accent);
+}
+
+/* The pen of the key on the pad: its width and colour. */
+.key-pen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  width: 100%;
+}
+
+.key-pen[hidden] {
+  display: none;
+}
+
+.key-pen .cycle-caption {
+  flex-basis: 100%;
+  text-align: left;
+}
+
+.key-pen input[type="range"] {
+  flex: 1 1 60px;
+  min-width: 0;
+}
+
+.key-pen input[type="color"] {
+  width: 32px;
+  flex: 0 0 auto;
 }

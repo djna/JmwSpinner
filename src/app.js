@@ -172,8 +172,24 @@
     canvas.setAttribute('aria-label', 'Draw the shape: up is towards the rim');
     const clear = el('button', { type: 'button' }, 'Clear');
     const note = el('p', { class: 'note' });
+    // Once animated, the pen of the key on the pad (key B's follows A's until changed).
+    const widthField = Rc.MOVE_TYPES[move.type].fields.find((f) => f.key === 'width');
+    const penRange = el('input', { type: 'range', min: widthField.min, max: widthField.max, step: widthField.step });
+    penRange.setAttribute('aria-label', 'Pen width of this key');
+    const penColour = el('input', { type: 'color' });
+    penColour.setAttribute('aria-label', 'Colour of this key');
+    const pen = el('div', { class: 'key-pen' });
+    pen.append(el('span', { class: 'cycle-caption' }, 'Pen'), penRange, penColour);
+    const setPen = (key, value) => {
+      const field = view === 'B' ? `${key}B` : key;
+      if (Rc.setField(move, field, value)) onChange();
+      paint();
+      paintStrip();
+    };
+    penRange.addEventListener('input', () => setPen('width', penRange.value));
+    penColour.addEventListener('input', () => setPen('colour', penColour.value));
     const side = el('div', { class: 'pad-side' });
-    side.append(note, clear);
+    side.append(note, pen, clear);
     const row = el('div', { class: 'pad-row' });
     row.append(canvas, side);
     wrap.append(strip, row);
@@ -185,7 +201,14 @@
     let wasAnimated = Rc.animated(move);
     const keyField = () => (view === 'B' ? 'keyB' : 'drawing');
     const keyStrokes = (key) => (key === 'B' ? move.keyB : move.drawing) || [];
-    const penWidth = () => Math.max(0.02, (2 * move.width) / move.length);
+    // The pen of the key or frame on the pad, its width in the pad's square.
+    const shownPen = () => {
+      const pens = Rc.keyPens(move);
+      if (!Rc.animated(move)) return pens.A;
+      return typeof view === 'number' ? Rc.animationOf(move).pen(view) : pens[view];
+    };
+    const padWidth = (width) => Math.max(0.02, (2 * width) / move.length);
+    const penWidth = () => padWidth(shownPen().width);
     const changed = () => {
       onChange();
       paint();
@@ -266,6 +289,12 @@
       else note.textContent = `Key B has ${b - a} more stroke${b - a > 1 ? 's' : ''} than key A, left out.`;
       clear.disabled = typeof view === 'number';
       canvas.classList.toggle('looking', typeof view === 'number');
+      pen.hidden = !Rc.animated(move);
+      const { width, colour } = shownPen();
+      penRange.value = width;
+      penColour.value = colour;
+      penRange.disabled = penColour.disabled = typeof view === 'number'; // generated: blended
+      penRange.title = `${typeof view === 'number' ? 'Blended pen width' : `Key ${view} pen width`}: ${Number(width).toFixed(3)}`;
     }
 
     function paint() {
@@ -293,7 +322,7 @@
       c.textAlign = 'left';
       if (Rc.animated(move)) c.fillText(typeof view === 'number' ? `${view + 1}` : view, 6, size / 12);
 
-      const ink = move.colour || '#1d1d24';
+      const ink = shownPen().colour;
       const width = penWidth();
       if (typeof view === 'number') {
         strokeOn(c, size, Rc.animationOf(move).at(view), ink, width);
@@ -301,10 +330,12 @@
       }
       if (Rc.animated(move)) {
         // Onion skin: the other key, faintly; drawing B, the stroke of A to match next.
-        const other = keyStrokes(view === 'A' ? 'B' : 'A');
-        strokeOn(c, size, other, 'rgba(0, 0, 0, 0.12)', width);
+        const otherKey = view === 'A' ? 'B' : 'A';
+        const other = keyStrokes(otherKey);
+        const otherWidth = padWidth(Rc.keyPens(move)[otherKey].width);
+        strokeOn(c, size, other, 'rgba(0, 0, 0, 0.12)', otherWidth);
         const next = other[keyStrokes('B').length];
-        if (view === 'B' && next) strokeOn(c, size, [next], 'rgba(240, 160, 40, 0.55)', width);
+        if (view === 'B' && next) strokeOn(c, size, [next], 'rgba(240, 160, 40, 0.55)', otherWidth);
       }
       strokeOn(c, size, [...keyStrokes(view), ...(stroke ? [stroke] : [])], ink, width);
     }
@@ -329,7 +360,6 @@
           frames.append(button);
         }
       }
-      const ink = move.colour || '#1d1d24';
       [...frames.children].forEach((button, k) => {
         const key = k === 0 ? 'A' : k === animation.keyB ? 'B' : null;
         button.setAttribute('aria-pressed', String(view === k || view === key));
@@ -339,7 +369,8 @@
         const c = thumb.getContext('2d');
         c.fillStyle = '#fafaf5';
         c.fillRect(0, 0, size, size);
-        strokeOn(c, size, animation.at(k), ink, Math.max(0.06, penWidth()));
+        const framePen = animation.pen(k);
+        strokeOn(c, size, animation.at(k), framePen.colour, Math.max(0.06, padWidth(framePen.width)));
       });
     }
 
@@ -364,6 +395,7 @@
   // (as in bindControl below), or a choice list. `onChange` runs after the field changes,
   // and a function that refreshes the controls from the move is added to `syncList`.
   function fieldControls(move, field, onChange, syncList) {
+    if (field.onPad) return []; // set on another field's pad (e.g. key B and its pen)
     const id = `move${move.id}-${field.key}`;
     const label = el('label', { for: id }, field.label);
 
@@ -388,7 +420,6 @@
     }
 
 
-    if (field.onPad) return []; // drawn on another field's pad (e.g. key B)
     if (field.drawing) return [drawingPad(move, field, onChange, syncList)];
 
     if (field.cycle) {

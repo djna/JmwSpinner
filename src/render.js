@@ -198,8 +198,11 @@
       const j = wobbleOf(steady, k);
       const theta = (k + j.angle) * spacing + (move.phase || 0) - Math.PI / 2;
       const r = move.radius + j.radial * move.length;
-      if (freeform) drawingAt(c, r, theta, move.length, move.width, animation.at(k), j);
-      else markAt(c, r, theta, move.length, move.width, j);
+      if (freeform) {
+        const pen = animation.pen(k); // each key's own, blended between them
+        ink = pen.colour;
+        drawingAt(c, r, theta, move.length, pen.width, animation.at(k), j);
+      } else markAt(c, r, theta, move.length, move.width, j);
     }
   }
 
