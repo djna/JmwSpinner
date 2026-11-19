@@ -4,7 +4,7 @@
   'use strict';
 
   const { TAU } = root.JmwMaths;
-  const { wobbleOf, steppedRadii, flapOf, leanStep } = root.JmwRecipe;
+  const { wobbleOf, steppedRadii, flapOf, leanStep, animationOf } = root.JmwRecipe;
 
   const INK = '#1d1d24';
   const BOARD = '#fbfbf8';
@@ -190,12 +190,15 @@
   function drawMarkRing(c, move) {
     const freeform = move.shape === 'freeform';
     if (freeform && !move.drawing) return; // nothing drawn yet
+    // Animated, each mark is a frame, and drawn true: the animation replaces the wobble.
+    const animation = animationOf(move);
+    const steady = animation.frames > 1 ? { ...move, wobble: 0 } : move;
     const spacing = TAU / move.count;
     for (let k = 0; k < move.count; k++) {
-      const j = wobbleOf(move, k);
+      const j = wobbleOf(steady, k);
       const theta = (k + j.angle) * spacing + (move.phase || 0) - Math.PI / 2;
       const r = move.radius + j.radial * move.length;
-      if (freeform) drawingAt(c, r, theta, move.length, move.width, move.drawing, j);
+      if (freeform) drawingAt(c, r, theta, move.length, move.width, animation.at(k), j);
       else markAt(c, r, theta, move.length, move.width, j);
     }
   }

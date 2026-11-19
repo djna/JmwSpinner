@@ -604,3 +604,47 @@ test('a saved freeform drawing survives saving and opening', () => {
   assert.equal(back.shape, 'freeform');
   assert.deepEqual(back.drawing, [[[0, -1], [0, 1]]]);
 });
+
+test('animated marks: key A at frame 0, key B halfway, blended between, wobble replaced', () => {
+  const move = R.createMove('marks', { count: 12, shape: 'freeform', drawing: [[[0, -1], [0, 1]]] });
+  assert.equal(R.animated(move), false); // motion none
+  assert.equal(R.animationOf(move).frames, 1);
+  R.setField(move, 'motion', 'swing');
+  assert.equal(R.animated(move), true);
+  R.setField(move, 'keyB', [[[1, 1], [1, -1]]]); // drawn the other way round: reversed
+  const animation = R.animationOf(move);
+  assert.equal(animation.frames, 12);
+  assert.equal(animation.keyB, 6);
+  const ends = (k) => {
+    const [stroke] = animation.at(k);
+    return [stroke[0], stroke[stroke.length - 1]].map(([x, y]) => [Math.round(x * 1000) / 1000, Math.round(y * 1000) / 1000]);
+  };
+  assert.deepEqual(ends(0), [[0, -1], [0, 1]]);
+  assert.deepEqual(ends(6), [[1, -1], [1, 1]]);
+  assert.deepEqual(ends(3), [[0.5, -1], [0.5, 1]]); // smooth easing: halfway at the middle
+  assert.deepEqual(ends(2), ends(10)); // there and back
+  assert.ok(animation.amount(1) < 1 / 6); // smooth: slow out of key A
+  R.setField(move, 'easing', 'even');
+  assert.equal(R.animationOf(move).amount(1), 1 / 6);
+  const wobble = R.MOVE_TYPES.marks.fields.find((f) => f.key === 'wobble');
+  assert.equal(wobble.shown(move), false);
+});
+
+test('repeats: divisors of the count leaving 3 or more frames, falling back when the count changes', () => {
+  assert.deepEqual(R.repeatChoices(12), [1, 2, 3, 4]);
+  assert.deepEqual(R.repeatChoices(13), [1]);
+  const move = R.createMove('marks', { count: 24, shape: 'freeform', motion: 'swing', drawing: [[[0, 0], [0, 1]]] });
+  R.setField(move, 'repeats', 4);
+  assert.equal(R.animationOf(move).frames, 6);
+  R.setField(move, 'count', 26);
+  assert.equal(R.repeatsOf(move), 2);
+  assert.equal(R.animationOf(move).frames, 13);
+});
+
+test('pairStrokes leaves strokes of A with no partner in B as they are', () => {
+  const a = [[[0, 0], [1, 0]], [[0, 1], [1, 1]]];
+  const pairs = R.pairStrokes(a, [[[0, 0], [0, 1]]]);
+  assert.ok(pairs[0].from && pairs[0].to);
+  assert.deepEqual(pairs[1], { still: a[1] });
+  assert.deepEqual(R.resample([[0, 0], [1, 0], [1, 1]], 5), [[0, 0], [0.5, 0], [1, 0], [1, 0.5], [1, 1]]);
+});

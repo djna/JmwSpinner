@@ -57,18 +57,59 @@
             ['freeform', 'freeform'],
           ],
         },
+        // Freeform animation (see animationOf): the marks around the ring are the frames,
+        // going from key A to key B and back, the cycle repeated around the ring.
+        {
+          key: 'motion',
+          label: 'Motion',
+          cycle: true,
+          shown: (move) => move.shape === 'freeform',
+          options: [
+            ['none', 'none'],
+            ['swing', 'back and forth', 'swing'],
+          ],
+        },
+        {
+          key: 'easing',
+          label: 'Easing',
+          cycle: true,
+          shown: animated,
+          options: [
+            ['smooth', 'smooth: slows into each key', 'smooth'],
+            ['even', 'even: the same change every frame', 'even'],
+          ],
+        },
+        // How many times the cycle goes round the ring: a divisor of the count (see repeatsOf).
+        { key: 'repeats', label: 'Repeats', cycle: true, divisors: true, integer: true, min: 1, shown: animated },
         // Freeform: strokes drawn by hand, each a list of [x, y] points in a square from
         // -1 to 1, with -y pointing away from the centre. Length is the square's side.
+        // Key B is drawn on the same pad, stroke by stroke matching key A.
         { key: 'drawing', label: 'Drawing', drawing: true },
+        { key: 'keyB', label: 'Key B', drawing: true, onPad: true },
         RADIUS,
         { key: 'length', label: 'Length', min: 0.02, max: 0.3, step: 0.005 },
         { key: 'width', label: 'Pen width', min: 0.005, max: 0.1, step: 0.005 },
         ALIGN,
         OFFSET,
-        WOBBLE,
+        { ...WOBBLE, shown: (move) => !animated(move) }, // animation takes its place
         COLOUR,
       ],
-      defaults: { count: 11, shape: 'line', drawing: null, radius: 0.8, length: 0.1, width: 0.03, align: null, offset: 0, wobble: 0.3, colour: INK },
+      defaults: {
+        count: 11,
+        shape: 'line',
+        motion: 'none',
+        easing: 'smooth',
+        repeats: 1,
+        drawing: null,
+        keyB: null,
+        radius: 0.8,
+        length: 0.1,
+        width: 0.03,
+        align: null,
+        offset: 0,
+        wobble: 0.3,
+        colour: INK,
+      },
       wobbly: true,
     },
     semicircles: {
@@ -347,6 +388,84 @@
     if (field.integer) v = Math.round(v);
     move[key] = field.signed ? v : Math.max(field.min, v);
     return true;
+  }
+
+  // Whether a ring of marks animates: freeform, moving back and forth, with key A drawn.
+  function animated(move) {
+    return move.shape === 'freeform' && move.motion === 'swing' && !!move.drawing;
+  }
+
+  // The repeats a ring's cycle can have: divisors of its count leaving at least 3 frames.
+  function repeatChoices(count) {
+    const choices = [];
+    for (let d = 1; count / d >= 3; d++) if (count % d === 0) choices.push(d);
+    return choices.length ? choices : [1];
+  }
+
+  // The repeats actually used: the largest choice not above the ring's own, so a count
+  // changed since still gives a seamless loop.
+  function repeatsOf(move) {
+    const choices = repeatChoices(move.count);
+    return choices.filter((d) => d <= (move.repeats || 1)).pop() || 1;
+  }
+
+  // Points spaced evenly along a stroke, `n` of them, from its start to its end.
+  function resample(stroke, n) {
+    const lengths = [0];
+    for (let i = 1; i < stroke.length; i++) {
+      lengths.push(lengths[i - 1] + Math.hypot(stroke[i][0] - stroke[i - 1][0], stroke[i][1] - stroke[i - 1][1]));
+    }
+    const total = lengths[lengths.length - 1];
+    const points = [];
+    let i = 1;
+    for (let p = 0; p < n; p++) {
+      const at = (total * p) / (n - 1);
+      while (i < stroke.length - 1 && lengths[i] < at) i++;
+      const span = lengths[i] - lengths[i - 1];
+      const f = span ? Math.min(1, Math.max(0, (at - lengths[i - 1]) / span)) : 0;
+      const [ax, ay] = stroke[i - 1];
+      const [bx, by] = stroke[i] || stroke[i - 1];
+      points.push([ax + (bx - ax) * f, ay + (by - ay) * f]);
+    }
+    return points;
+  }
+
+  // Key A's and key B's strokes paired in drawing order and resampled to match, a B
+  // stroke drawn the other way round reversed. A's strokes with no partner yet stay as
+  // they are; B's extra strokes are left out.
+  function pairStrokes(a, b) {
+    return a.map((strokeA, i) => {
+      let strokeB = b && b[i];
+      if (!strokeB) return { still: strokeA };
+      const [a0, a1] = [strokeA[0], strokeA[strokeA.length - 1]];
+      const [b0, b1] = [strokeB[0], strokeB[strokeB.length - 1]];
+      const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+      if (dist(a0, b1) + dist(a1, b0) < dist(a0, b0) + dist(a1, b1)) strokeB = strokeB.slice().reverse();
+      const n = Math.max(strokeA.length, strokeB.length, 2) * 4;
+      return { from: resample(strokeA, Math.min(n, 120)), to: resample(strokeB, Math.min(n, 120)) };
+    });
+  }
+
+  // A ring of marks as an animation: `frames` in each cycle, and `at(k)` the k-th mark's
+  // drawing. Frame 0 is key A and frame floor(frames / 2) key B, the frames between them
+  // blended (smooth easing slows into each key). Played forwards or backwards it looks
+  // the same, so it does not matter which neighbour the strobe brings next. A ring that
+  // does not animate gives key A at every mark.
+  function animationOf(move) {
+    if (!animated(move)) return { frames: 1, at: () => move.drawing, keyB: null };
+    const frames = move.count / repeatsOf(move);
+    const half = Math.floor(frames / 2);
+    const pairs = pairStrokes(move.drawing, move.keyB);
+    const blend = (u) =>
+      pairs.map((pair) => {
+        if (pair.still) return pair.still;
+        return pair.from.map(([x, y], i) => [x + (pair.to[i][0] - x) * u, y + (pair.to[i][1] - y) * u]);
+      });
+    const amount = (f) => {
+      const u = f <= half ? f / half : (frames - f) / (frames - half);
+      return move.easing === 'even' ? u : (1 - Math.cos(Math.PI * u)) / 2;
+    };
+    return { frames, keyB: half, amount: (k) => amount(k % frames), at: (k) => blend(amount(k % frames)) };
   }
 
   // A freeform drawing, kept valid: a list of strokes, each of at least two [x, y] points
@@ -855,6 +974,12 @@
     shownValue,
     fieldInactive,
     cleanDrawing,
+    animated,
+    repeatChoices,
+    repeatsOf,
+    resample,
+    pairStrokes,
+    animationOf,
     simplifyStroke,
     steppedRadii,
     flapOf,

@@ -486,12 +486,13 @@ button.cycle:disabled {
   cursor: default;
 }
 
-/* A freeform shape, drawn by hand: the pad, then a note and Clear beside it. */
+/* A freeform shape, drawn by hand: the frames when animated, then the pad with a note
+   and Clear beside it. */
 .drawing-pad {
   grid-column: 1 / -1;
   display: flex;
-  gap: 10px;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .drawing-pad canvas.pad {
@@ -508,4 +509,79 @@ button.cycle:disabled {
   flex-direction: column;
   gap: 8px;
   align-items: flex-start;
+}
+
+.pad-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.drawing-pad canvas.pad.looking {
+  cursor: default;
+}
+
+/* An animated drawing's frames: keys A and B marked, the one on the pad outlined. */
+.frame-strip {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.frame-strip[hidden] {
+  display: none;
+}
+
+.frames {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.frame-strip button {
+  position: relative;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.frame-strip button.play {
+  padding: 2px 8px;
+  border: 1px solid var(--muted);
+  line-height: normal;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.frame canvas {
+  width: 24px;
+  height: 24px;
+  aspect-ratio: auto;
+  border-radius: 2px;
+  opacity: 0.75;
+}
+
+.frame.key canvas {
+  opacity: 1;
+}
+
+.frame.key {
+  border-color: var(--muted);
+}
+
+.frame span {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  font-size: 0.6rem;
+  line-height: 1;
+  font-weight: 700;
+  color: #333;
+}
+
+.frame[aria-pressed="true"] {
+  border-color: var(--accent);
 }
