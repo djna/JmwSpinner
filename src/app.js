@@ -165,6 +165,18 @@
       return [label, picker, code];
     }
 
+    if (field.cycle) {
+      const choices = field.options.map(([value, text, short]) => [value, short || text, text]);
+      const cell = cycler(id, field.label, choices, (value) => {
+        if (Rc.setField(move, field.key, value)) onChange();
+      });
+      syncList.push(() => {
+        cell.choose(move[field.key]);
+        markInactive(move, field, cell.caption, [cell.button]);
+      });
+      return [cell];
+    }
+
     if (field.options || field.ref) {
       const select = el('select', { id, class: 'wide' });
       const fill = (options) => select.replaceChildren(...options.map(([value, text]) => el('option', { value }, text)));
@@ -392,7 +404,8 @@
   function cycler(id, caption, choices, pick) {
     const button = el('button', { id, type: 'button', class: 'cycle' });
     const cell = el('div', { class: 'cycle-cell' });
-    cell.append(el('label', { for: id, class: 'cycle-caption' }, caption), button);
+    cell.caption = el('label', { for: id, class: 'cycle-caption' }, caption);
+    cell.append(cell.caption, button);
     let index = 0;
     let guessed = false;
     button.addEventListener('click', (event) => {
@@ -457,7 +470,15 @@
         fields.append(...countControls(move, field, onChange, syncList));
         continue;
       }
-      fields.append(...fieldControls(move, field, onChange, syncList));
+      const controls = fieldControls(move, field, onChange, syncList);
+      if (field.cycle) {
+        // Neighbouring cycling choices share one line.
+        let row = fields.lastElementChild;
+        if (!row?.classList.contains('field-cycles')) fields.append((row = el('div', { class: 'cycles field-cycles' })));
+        row.append(...controls);
+        continue;
+      }
+      fields.append(...controls);
       if (field.key === 'turns') fields.append(...flightControls(move, onChange, syncList));
     }
     return fields;

@@ -479,3 +479,9 @@ button.cycle.guessed {
   color: var(--muted);
   font-weight: normal;
 }
+
+button.cycle:disabled {
+  border-color: var(--muted);
+  color: var(--muted);
+  cursor: default;
+}

@@ -8,7 +8,9 @@
 
   // Each move type: a label, whether it has a mark count (so it drifts under the strobe)
   // and if so a plural noun for that count, its editable fields and their defaults.
-  // Number fields have a slider range; a field with `options` is a choice instead, and a
+  // Number fields have a slider range; a field with `options` is a choice instead (each
+  // [value, text], or [value, text, short text]; `cycle` shows it as a button stepping
+  // through them, beside its neighbours, rather than a list), and a
   // `ref` field holds the id of another move (a solid 'circle', or a counted 'ring'), or null.
   const COUNT = { key: 'count', label: 'Count', min: 1, max: 72, step: 1, integer: true };
   const RADIUS = { key: 'radius', label: 'Radius', min: 0.05, max: 0.95, step: 0.01 };
@@ -16,6 +18,7 @@
   const EDGE = {
     key: 'edge',
     label: 'Edge',
+    cycle: true,
     options: [
       ['inner', 'inner edge'],
       ['outer', 'outer edge'],
@@ -109,9 +112,10 @@
         {
           key: 'shape',
           label: 'Shape',
+          cycle: true,
           options: [
             ['round', 'semicircular'],
-            ['cog', 'cog (square notch)'],
+            ['cog', 'cog (square notch)', 'cog'],
           ],
         },
         { key: 'size', label: 'Width', min: 0.01, max: 0.3, step: 0.005 },
