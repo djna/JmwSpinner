@@ -572,22 +572,33 @@ test('a ring is offered only rings whose counts fit to line up with', () => {
   assert.ok(R.countsFit(13, 26) && R.countsFit(6, 12) && !R.countsFit(11, 13));
 });
 
-test('freeform marks: drawings are cleaned, and a first switch suits the pen to drawing', () => {
+// A freeform ring with one layer: key A's strokes and key B's.
+const freeform = (A, B, extra = {}) => {
+  const move = R.createMove('marks', { count: 12, shape: 'freeform', ...extra });
+  R.setField(move, 'layers', [{ A, B, width: 0.01, colour: '#000000' }]);
+  return move;
+};
+const rounded = (stroke) => stroke.map(([x, y]) => [Math.round(x * 1000) / 1000, Math.round(y * 1000) / 1000]);
+const ends = (stroke) => rounded([stroke[0], stroke[stroke.length - 1]]);
+
+test('freeform marks: layers are cleaned, and a first switch suits the pen to drawing', () => {
   const move = R.createMove('marks');
   assert.equal(move.shape, 'line');
-  assert.equal(move.drawing, null);
+  assert.deepEqual(move.layers, []);
   assert.equal(R.setField(move, 'shape', 'freeform'), true);
   assert.equal(move.length, 0.16);
   assert.equal(move.width, 0.012);
-  assert.equal(R.setField(move, 'drawing', [[[0.12345, 2], [-0.5, -0.5]], [[0.1, 0.1]]]), true);
-  assert.deepEqual(move.drawing, [[[0.123, 1], [-0.5, -0.5]], [[0.1, 0.1], [0.1, 0.1]]]);
-  assert.equal(R.setField(move, 'drawing', 'scribble'), false);
-  assert.equal(R.setField(move, 'drawing', [[[0, 'x']]]), false);
-  assert.equal(R.setField(move, 'drawing', []), true);
-  assert.equal(move.drawing, null);
-  assert.equal(R.fieldInactive({ moves: [move] }, move, 'drawing'), false);
+  assert.equal(R.setField(move, 'layers', [{ A: [[[0.12345, 2], [-0.5, -0.5]], [[0.1, 0.1]]], colour: '#ABCDEF', width: 5 }]), true);
+  assert.deepEqual(move.layers, [
+    { A: [[[0.123, 1], [-0.5, -0.5]], [[0.1, 0.1], [0.1, 0.1]]], B: null, width: 0.2, colour: '#abcdef', widthB: null, colourB: null },
+  ]);
+  assert.equal(R.setField(move, 'layers', 'scribble'), false);
+  assert.equal(R.setField(move, 'layers', [{ A: [[[0, 'x']]] }]), false);
+  assert.equal(R.setField(move, 'layers', []), true);
+  assert.equal(R.hasStrokes(move), false);
+  assert.equal(R.fieldInactive({ moves: [move] }, move, 'layers'), false);
   R.setField(move, 'shape', 'line');
-  assert.equal(R.fieldInactive({ moves: [move] }, move, 'drawing'), true);
+  assert.equal(R.fieldInactive({ moves: [move] }, move, 'layers'), true);
 });
 
 test('simplifyStroke keeps corners and drops points along straight runs', () => {
@@ -598,31 +609,30 @@ test('simplifyStroke keeps corners and drops points along straight runs', () => 
   assert.deepEqual(R.simplifyStroke([[0, 0]]), [[0, 0]]);
 });
 
-test('a saved freeform drawing survives saving and opening', () => {
-  const move = R.createMove('marks', { shape: 'freeform', drawing: [[[0, -1], [0, 1]]] });
+test('freeform layers survive saving and opening, and a drawing saved before layers becomes one', () => {
+  const move = freeform([[[0, -1], [0, 1]]], null);
   const [back] = R.movesFromSaved(JSON.parse(JSON.stringify([move])));
-  assert.equal(back.shape, 'freeform');
-  assert.deepEqual(back.drawing, [[[0, -1], [0, 1]]]);
+  assert.deepEqual(back.layers, move.layers);
+  const [old] = R.movesFromSaved([
+    { id: 7, type: 'marks', shape: 'freeform', width: 0.02, colour: '#112233', drawing: [[[0, 0], [0, 1]]], keyB: [[[1, 0], [1, 1]]], colourB: '#445566' },
+  ]);
+  assert.deepEqual(old.layers, [{ A: [[[0, 0], [0, 1]]], B: [[[1, 0], [1, 1]]], width: 0.02, colour: '#112233', widthB: null, colourB: '#445566' }]);
 });
 
 test('animated marks: key A at frame 0, key B halfway, blended between, wobble replaced', () => {
-  const move = R.createMove('marks', { count: 12, shape: 'freeform', drawing: [[[0, -1], [0, 1]]] });
+  const move = freeform([[[0, -1], [0, 1]]], [[[1, 1], [1, -1]]]); // B drawn the other way round
   assert.equal(R.animated(move), false); // motion none
   assert.equal(R.animationOf(move).frames, 1);
   R.setField(move, 'motion', 'swing');
   assert.equal(R.animated(move), true);
-  R.setField(move, 'keyB', [[[1, 1], [1, -1]]]); // drawn the other way round: reversed
   const animation = R.animationOf(move);
   assert.equal(animation.frames, 12);
   assert.equal(animation.keyB, 6);
-  const ends = (k) => {
-    const [stroke] = animation.at(k);
-    return [stroke[0], stroke[stroke.length - 1]].map(([x, y]) => [Math.round(x * 1000) / 1000, Math.round(y * 1000) / 1000]);
-  };
-  assert.deepEqual(ends(0), [[0, -1], [0, 1]]);
-  assert.deepEqual(ends(6), [[1, -1], [1, 1]]);
-  assert.deepEqual(ends(3), [[0.5, -1], [0.5, 1]]); // smooth easing: halfway at the middle
-  assert.deepEqual(ends(2), ends(10)); // there and back
+  const at = (k) => ends(animation.layers(k)[0].strokes[0]);
+  assert.deepEqual(at(0), [[0, -1], [0, 1]]);
+  assert.deepEqual(at(6), [[1, -1], [1, 1]]);
+  assert.deepEqual(at(3), [[0.5, -1], [0.5, 1]]); // smooth easing: halfway at the middle
+  assert.deepEqual(at(2), at(10)); // there and back
   assert.ok(animation.amount(1) < 1 / 6); // smooth: slow out of key A
   R.setField(move, 'easing', 'even');
   assert.equal(R.animationOf(move).amount(1), 1 / 6);
@@ -633,7 +643,7 @@ test('animated marks: key A at frame 0, key B halfway, blended between, wobble r
 test('repeats: divisors of the count leaving 3 or more frames, falling back when the count changes', () => {
   assert.deepEqual(R.repeatChoices(12), [1, 2, 3, 4]);
   assert.deepEqual(R.repeatChoices(13), [1]);
-  const move = R.createMove('marks', { count: 24, shape: 'freeform', motion: 'swing', drawing: [[[0, 0], [0, 1]]] });
+  const move = freeform([[[0, 0], [0, 1]]], null, { count: 24, motion: 'swing' });
   R.setField(move, 'repeats', 4);
   assert.equal(R.animationOf(move).frames, 6);
   R.setField(move, 'count', 26);
@@ -641,29 +651,38 @@ test('repeats: divisors of the count leaving 3 or more frames, falling back when
   assert.equal(R.animationOf(move).frames, 13);
 });
 
-test('pairStrokes leaves strokes of A with no partner in B as they are', () => {
+test('strokes only in key B grow in; only in key A shrink away; with no key B, A stays', () => {
   const a = [[[0, 0], [1, 0]], [[0, 1], [1, 1]]];
-  const pairs = R.pairStrokes(a, [[[0, 0], [0, 1]]]);
-  assert.ok(pairs[0].from && pairs[0].to);
-  assert.deepEqual(pairs[1], { still: a[1] });
+  assert.deepEqual(R.pairStrokes(a, null)[1], { still: a[1] });
+  assert.deepEqual(R.pairStrokes(a, [[[0, 0], [0, 1]]])[1], { shrink: a[1] });
+  assert.deepEqual(R.pairStrokes([], [[[0, 0], [0, 1]]])[0], { grow: [[0, 0], [0, 1]] });
   assert.deepEqual(R.resample([[0, 0], [1, 0], [1, 1]], 5), [[0, 0], [0.5, 0], [1, 0], [1, 0.5], [1, 1]]);
+  assert.deepEqual(R.partial([[0, 0], [1, 0], [1, 1]], 0.75), [[0, 0], [1, 0], [1, 0.5]]);
+  assert.equal(R.partial([[0, 0], [1, 0]], 0), null);
+
+  // A ray layer with nothing in key A: drawn on from its start, full at key B.
+  const move = freeform([[[0, 0], [0, -1]]], [[[0, 0], [0, -1]]], { motion: 'swing', easing: 'even' });
+  move.layers.push(R.newLayer({ width: 0.02, colour: '#ff0000' }));
+  R.setField(move, 'layers', [...move.layers.slice(0, 1), { ...move.layers[1], B: [[[0, 0], [1, 0]]] }]);
+  const animation = R.animationOf(move);
+  assert.deepEqual(animation.layers(0)[1].strokes, []);
+  assert.deepEqual(rounded(animation.layers(3)[1].strokes[0]), [[0, 0], [0.5, 0]]);
+  assert.deepEqual(rounded(animation.layers(6)[1].strokes[0]), [[0, 0], [1, 0]]);
+  assert.equal(animation.layers(3)[1].colour, '#ff0000');
 });
 
-test('each key has its own pen, blended through the frames; key B follows A until set', () => {
-  const move = R.createMove('marks', { count: 12, shape: 'freeform', motion: 'swing', easing: 'even' });
-  R.setField(move, 'drawing', [[[0, -1], [0, 1]]]);
-  R.setField(move, 'keyB', [[[1, -1], [1, 1]]]);
-  R.setField(move, 'colour', '#000000');
-  assert.deepEqual(R.keyPens(move).B, { width: move.width, colour: '#000000' }); // follows A
-  R.setField(move, 'widthB', 0.05);
-  R.setField(move, 'colourB', '#ff8800');
+test('each layer has its own pen in each key, blended through the frames; key B follows A until set', () => {
+  const move = freeform([[[0, -1], [0, 1]]], [[[1, -1], [1, 1]]], { motion: 'swing', easing: 'even' });
+  assert.deepEqual(R.layerPens(move.layers[0]).B, { width: 0.01, colour: '#000000' }); // follows A
+  R.setField(move, 'layers', [{ ...move.layers[0], widthB: 0.05, colourB: '#ff8800' }]);
   const animation = R.animationOf(move);
-  assert.deepEqual(animation.pen(0), { width: move.width, colour: '#000000' });
-  assert.deepEqual(animation.pen(6), { width: 0.05, colour: '#ff8800' });
-  assert.equal(animation.pen(3).colour, '#804400');
-  assert.ok(Math.abs(animation.pen(3).width - (move.width + 0.05) / 2) < 1e-12);
-  assert.equal(R.setField(move, 'colourB', null), true); // back to following A
-  assert.equal(R.keyPens(move).B.colour, '#000000');
+  const pen = (k) => {
+    const { width, colour } = animation.layers(k)[0];
+    return { width: Math.round(width * 1000) / 1000, colour };
+  };
+  assert.deepEqual(pen(0), { width: 0.01, colour: '#000000' });
+  assert.deepEqual(pen(6), { width: 0.05, colour: '#ff8800' });
+  assert.deepEqual(pen(3), { width: 0.03, colour: '#804400' });
   const widthField = R.MOVE_TYPES.marks.fields.find((f) => f.key === 'width');
   assert.equal(widthField.shown(move), false); // set on the pad instead
 });

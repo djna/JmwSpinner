@@ -615,3 +615,34 @@ button.cycle:disabled {
   width: 32px;
   flex: 0 0 auto;
 }
+
+/* Layer chips: each in its layer's colour, the one being drawn on outlined. */
+.layer-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.layer-chips .chip {
+  min-width: 24px;
+  height: 22px;
+  padding: 0 5px;
+  border: 2px solid transparent;
+  border-radius: 11px;
+  background: var(--chip, var(--bg));
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-shadow: 0 0 2px #000;
+  cursor: pointer;
+}
+
+.layer-chips .chip[aria-pressed="true"] {
+  border-color: var(--accent);
+}
+
+.layer-chips .chip.add {
+  border: 1px dashed var(--muted);
+  color: var(--text);
+  text-shadow: none;
+}

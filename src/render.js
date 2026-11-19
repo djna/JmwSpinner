@@ -4,7 +4,7 @@
   'use strict';
 
   const { TAU } = root.JmwMaths;
-  const { wobbleOf, steppedRadii, flapOf, leanStep, animationOf } = root.JmwRecipe;
+  const { wobbleOf, steppedRadii, flapOf, leanStep, animationOf, hasStrokes } = root.JmwRecipe;
 
   const INK = '#1d1d24';
   const BOARD = '#fbfbf8';
@@ -78,24 +78,27 @@
     c.stroke();
   }
 
-  // A freeform drawing (see the marks' `drawing` field): its strokes in a square of side
-  // `length`, up in the square pointing away from the centre.
-  function drawingAt(c, r, theta, length, width, drawing, j) {
-    c.save();
-    c.translate(r * Math.cos(theta), r * Math.sin(theta));
-    c.rotate(theta + Math.PI / 2 + j.tilt); // local -y now points away from the centre
-    c.scale((length * j.scale) / 2, (length * j.scale) / 2);
-    c.beginPath();
-    for (const stroke of drawing) {
-      c.moveTo(...stroke[0]);
-      for (const point of stroke.slice(1)) c.lineTo(...point);
+  // A freeform drawing (see the marks' `layers` field): layers of strokes, each in its own
+  // pen, in a square of side `length`, up in the square pointing away from the centre.
+  function drawingAt(c, r, theta, length, layers, j) {
+    for (const layer of layers) {
+      if (!layer.strokes.length) continue;
+      c.save();
+      c.translate(r * Math.cos(theta), r * Math.sin(theta));
+      c.rotate(theta + Math.PI / 2 + j.tilt); // local -y now points away from the centre
+      c.scale((length * j.scale) / 2, (length * j.scale) / 2);
+      c.beginPath();
+      for (const stroke of layer.strokes) {
+        c.moveTo(...stroke[0]);
+        for (const point of stroke.slice(1)) c.lineTo(...point);
+      }
+      c.restore(); // the path keeps its shape; the pen width is in wheel units
+      c.lineCap = 'round';
+      c.lineJoin = 'round';
+      c.strokeStyle = layer.colour;
+      c.lineWidth = layer.width * j.width;
+      c.stroke();
     }
-    c.restore(); // the path keeps its shape; the pen width is in wheel units
-    c.lineCap = 'round';
-    c.lineJoin = 'round';
-    c.strokeStyle = ink;
-    c.lineWidth = width * j.width;
-    c.stroke();
   }
 
   // A semicircle whose flat side lies along the ring, bulging in towards the centre or out.
@@ -189,7 +192,7 @@
   // top (or at `phase`). With wobble, each is slightly off in place, length, tilt and pen width.
   function drawMarkRing(c, move) {
     const freeform = move.shape === 'freeform';
-    if (freeform && !move.drawing) return; // nothing drawn yet
+    if (freeform && !hasStrokes(move)) return; // nothing drawn yet
     // Animated, each mark is a frame, and drawn true: the animation replaces the wobble.
     const animation = animationOf(move);
     const steady = animation.frames > 1 ? { ...move, wobble: 0 } : move;
@@ -198,11 +201,8 @@
       const j = wobbleOf(steady, k);
       const theta = (k + j.angle) * spacing + (move.phase || 0) - Math.PI / 2;
       const r = move.radius + j.radial * move.length;
-      if (freeform) {
-        const pen = animation.pen(k); // each key's own, blended between them
-        ink = pen.colour;
-        drawingAt(c, r, theta, move.length, pen.width, animation.at(k), j);
-      } else markAt(c, r, theta, move.length, move.width, j);
+      if (freeform) drawingAt(c, r, theta, move.length, animation.layers(k), j);
+      else markAt(c, r, theta, move.length, move.width, j);
     }
   }
 
