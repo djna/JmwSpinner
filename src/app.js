@@ -82,6 +82,7 @@
   function setTechnical(on) {
     technical = on;
     document.body.classList.toggle('technical', on);
+    for (const sync of [...syncs, ...draftSyncs]) sync(); // some rows show only in it
     for (const button of document.querySelectorAll('.tech-toggle')) button.setAttribute('aria-pressed', String(on));
   }
 
@@ -162,6 +163,18 @@
         code.value = picker.value = move[field.key];
       });
       return [label, picker, code];
+    }
+
+    if (field.cycle) {
+      const choices = field.options.map(([value, text, short]) => [value, short || text, text]);
+      const cell = cycler(id, field.label, choices, (value) => {
+        if (Rc.setField(move, field.key, value)) onChange();
+      });
+      syncList.push(() => {
+        cell.choose(move[field.key]);
+        markInactive(move, field, cell.caption, [cell.button]);
+      });
+      return [cell];
     }
 
     if (field.options || field.ref) {
@@ -301,11 +314,171 @@
     return [label, range, box];
   }
 
+  // Lining a ring up with another, offered only when some ring's count fits (equal, or one a
+  // multiple of the other), since otherwise the two coincide at just one point. Once a ring
+  // is chosen: where the shapes sit, in line, halfway between, or elsewhere on a slider. The
+  // technical view shows all of it, including an offset from the top of the wheel.
+  function lineUpControls(move, onChange, syncList) {
+    const offsetField = Rc.MOVE_TYPES[move.type].fields.find((f) => f.key === 'offset');
+    const id = `move${move.id}-align`;
+    const label = el('label', { for: id }, 'Line up with');
+    const select = el('select', { id, class: 'wide' });
+    select.addEventListener('change', () => {
+      if (Rc.setField(move, 'align', select.value)) onChange();
+    });
+
+    let custom = false; // chosen "elsewhere": keep the slider while it passes 0 or 0.5
+    const PLACES = [['inline', 'in line'], ['between', 'between', 'halfway between'], ['custom', 'elsewhere']];
+    const [placeLabel, place] = segmented(`move${move.id}-place`, 'Shapes sit', PLACES, (value) => {
+      custom = value === 'custom';
+      if (!custom && Rc.setField(move, 'offset', value === 'between' ? 0.5 : 0)) onChange();
+      show();
+    });
+    const offset = fieldControls(move, offsetField, onChange, syncList); // label, slider, box
+
+    const show = () => {
+      const choices = Rc.lineUpChoices(recipe, move);
+      const target = Rc.alignedRing(recipe, move);
+      const options = [['', 'nothing'], ...choices.map((m) => [m.id, `${moveName(m)} (${m.count})`])];
+      if (target && !choices.includes(target)) {
+        options.push([target.id, `${moveName(target)} (${target.count}: counts don't fit)`]);
+      }
+      select.replaceChildren(...options.map(([value, text]) => el('option', { value }, text)));
+      select.value = move.align ?? '';
+      const inactive = Rc.fieldInactive(recipe, move, 'align'); // e.g. anchored wings
+      label.classList.toggle('inactive', inactive);
+      select.disabled = inactive;
+      for (const button of place.buttons) button.disabled = inactive;
+      label.hidden = select.hidden = !technical && (inactive || (!choices.length && !target));
+
+      const off = move.offset || 0;
+      if (Math.abs(off) > 1e-9 && Math.abs(Math.abs(off) - 0.5) > 1e-9) custom = true;
+      place.choose(custom ? 'custom' : Math.abs(off) > 1e-9 ? 'between' : 'inline');
+      placeLabel.hidden = place.hidden = !target || (inactive && !technical);
+      for (const node of offset) node.hidden = !technical && !(target && custom && !inactive);
+    };
+    syncList.push(show);
+    return [label, select, placeLabel, place, ...offset];
+  }
+
+  // A ring's count by intent: how many shapes (about 1, 2 or 3 times the flashes per
+  // revolution), which way they seem to turn, and how fast. Each choice sets the count, and
+  // the choices are read back from it at the current rates. A count that matches no intent
+  // (or the technical view) shows the count slider too. Anchored wings take their anchor's.
+  const INTENT_CHOICES = {
+    density: [[1, 'few'], [2, 'more'], [3, 'lots']],
+    way: [[1, 'clockwise'], [-1, 'anticlockwise'], [0, 'still']],
+    speed: [[1, 'slow'], [2, 'fast'], [3, 'very fast']],
+  };
+  const INTENT_LABELS = { density: 'How many', way: 'Direction', speed: 'Speed' };
+
+  // A row of buttons acting as radio buttons, all options on one line. `pick` runs with the
+  // chosen value; a change event then bubbles up, so the card records an undo step.
+  // Returns the group, with `choose(value)` to show a value as chosen (none for null).
+  function segmented(id, labelText, choices, pick) {
+    const label = el('span', { id: `${id}-label`, class: 'seg-label' }, labelText);
+    const group = el('div', { id, class: 'segmented wide', role: 'radiogroup', 'aria-labelledby': `${id}-label` });
+    const buttons = choices.map(([value, text, title]) => {
+      const button = el('button', { type: 'button', role: 'radio', 'aria-checked': 'false' }, text);
+      if (title) button.title = title;
+      button.dataset.value = value;
+      button.addEventListener('click', () => {
+        pick(value);
+        group.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      group.append(button);
+      return button;
+    });
+    group.choose = (value) => {
+      for (const button of buttons) button.setAttribute('aria-checked', String(button.dataset.value === String(value)));
+    };
+    group.buttons = buttons;
+    return [label, group];
+  }
+
+  // A button that steps through its choices on each click (shift-click steps back), with a
+  // small caption above saying what it sets. Several sit side by side on one line.
+  // `pick(value)` runs with the next choice; a change event then bubbles up, so the card
+  // records an undo step. Returns the cell, with `choose(value, guessed)` to show a value:
+  // guessed shows the nearest choice dimmed, and a click then takes that choice first.
+  function cycler(id, caption, choices, pick) {
+    const button = el('button', { id, type: 'button', class: 'cycle' });
+    const cell = el('div', { class: 'cycle-cell' });
+    cell.caption = el('label', { for: id, class: 'cycle-caption' }, caption);
+    cell.append(cell.caption, button);
+    let index = 0;
+    let guessed = false;
+    button.addEventListener('click', (event) => {
+      const next = guessed ? index : (index + (event.shiftKey ? choices.length - 1 : 1)) % choices.length;
+      pick(choices[next][0]);
+      button.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    cell.choose = (value, guess = false) => {
+      index = Math.max(0, choices.findIndex(([v]) => String(v) === String(value)));
+      guessed = guess;
+      const [, text, title] = choices[index];
+      button.textContent = text;
+      button.classList.toggle('guessed', guess);
+      button.title = guess ? `nearest: ${text}. Click to use it` : `${title || text}. Click for ${choices[(index + 1) % choices.length][1]}`;
+    };
+    cell.button = button;
+    return cell;
+  }
+
+  function countControls(move, field, onChange, syncList) {
+    const cells = {};
+    const row = el('div', { class: 'cycles' });
+    for (const key of Object.keys(INTENT_CHOICES)) {
+      cells[key] = cycler(`move${move.id}-${key}`, INTENT_LABELS[key], INTENT_CHOICES[key], (value) => {
+        const intent = { ...(M.countIntent(move.count, perRev) || M.nearestIntent(move.count, perRev)) };
+        intent[key] = value;
+        sliding = false;
+        if (Rc.setField(move, 'count', M.countFor(intent.density, intent.way, intent.speed, perRev))) onChange();
+        show();
+      });
+      row.append(cells[key]);
+    }
+    const count = fieldControls(move, field, onChange, syncList); // label, slider, box
+    // Once the slider is in use, it stays while it passes counts that match an intent.
+    let sliding = false;
+    for (const type of ['pointerdown', 'keydown']) count[1].addEventListener(type, () => (sliding = true));
+
+    const show = () => {
+      const intent = M.countIntent(move.count, perRev);
+      const shown = intent || M.nearestIntent(move.count, perRev); // none matches: the nearest, dimmed
+      const inactive = Rc.fieldInactive(recipe, move, 'count');
+      for (const [key, cell] of Object.entries(cells)) cell.choose(shown[key], !intent);
+      cells.density.button.title += ` (about ${Math.round(shown.density * perRev)} at these rates)`;
+      cells.speed.classList.toggle('unused', shown.way === 0); // still: no speed
+      row.hidden = inactive;
+      for (const node of count) node.hidden = !technical && (inactive || (intent !== null && !sliding));
+    };
+    show.rates = true; // the intent depends on flashes per revolution
+    syncList.push(show);
+    return [row, ...count];
+  }
+
   function fieldsGrid(move, onChange, syncList, skip = []) {
     const fields = el('div', { class: 'move-fields' });
     for (const field of Rc.MOVE_TYPES[move.type].fields) {
-      if (skip.includes(field.key)) continue;
-      fields.append(...fieldControls(move, field, onChange, syncList));
+      if (skip.includes(field.key) || field.key === 'offset') continue; // offset: with Line up with
+      if (field.key === 'align') {
+        fields.append(...lineUpControls(move, onChange, syncList));
+        continue;
+      }
+      if (field.key === 'count') {
+        fields.append(...countControls(move, field, onChange, syncList));
+        continue;
+      }
+      const controls = fieldControls(move, field, onChange, syncList);
+      if (field.cycle) {
+        // Neighbouring cycling choices share one line.
+        let row = fields.lastElementChild;
+        if (!row?.classList.contains('field-cycles')) fields.append((row = el('div', { class: 'cycles field-cycles' })));
+        row.append(...controls);
+        continue;
+      }
+      fields.append(...controls);
       if (field.key === 'turns') fields.append(...flightControls(move, onChange, syncList));
     }
     return fields;

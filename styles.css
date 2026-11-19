@@ -236,7 +236,7 @@ select.wide {
 
 .move-fields {
   display: grid;
-  grid-template-columns: auto minmax(100px, 1fr) 5.5em;
+  grid-template-columns: 6.5em minmax(100px, 1fr) 5.5em; /* the same in every card and set */
   gap: 6px 10px;
   align-items: center;
 }
@@ -253,7 +253,7 @@ label.inactive {
 }
 
 .draft .move-fields {
-  grid-template-columns: auto minmax(60px, 1fr) 4.5em;
+  grid-template-columns: 6.5em minmax(60px, 1fr) 4.5em;
 }
 
 .draft .move-head select {
@@ -384,4 +384,104 @@ body.technical input[type="color"].wide {
 
 .nibble-set .move-name {
   font-weight: 500;
+}
+
+/* Rows a card leaves out until they mean something (e.g. Line up with). */
+.move-fields [hidden] {
+  display: none !important;
+}
+
+/* Buttons acting as radio buttons: every option on one line. */
+.segmented {
+  grid-column: span 2;
+  display: flex;
+  min-width: 0;
+}
+
+.segmented button {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px 3px;
+  font-size: 0.85rem;
+  border: 1px solid var(--muted);
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.segmented button + button {
+  border-left: none;
+}
+
+.segmented button:first-child {
+  border-radius: 5px 0 0 5px;
+}
+
+.segmented button:last-child {
+  border-radius: 0 5px 5px 0;
+}
+
+.segmented button[aria-checked="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #222;
+  font-weight: 600;
+}
+
+/* Choices that step on each click, side by side, each with a small caption above. */
+.cycles {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cycle-cell {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cycle-cell.unused {
+  visibility: hidden;
+}
+
+.cycle-caption {
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-align: center;
+  white-space: nowrap;
+}
+
+button.cycle {
+  padding: 3px 3px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+button.cycle.guessed {
+  border-style: dashed;
+  border-color: var(--muted);
+  color: var(--muted);
+  font-weight: normal;
+}
+
+button.cycle:disabled {
+  border-color: var(--muted);
+  color: var(--muted);
+  cursor: default;
 }

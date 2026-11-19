@@ -89,6 +89,37 @@
     return guide;
   }
 
+  // Counts by intent, at `perRev` flashes per revolution. `density` is how many sets of about
+  // perRev shapes (1 few, 2 more, 3 lots); `way` is 1 clockwise (with the wheel), -1
+  // anticlockwise, 0 still; `speed` (1 slow, 2 fast, 3 very fast) is how many shapes over or
+  // under a whole multiple, so each moves speed ÷ perRev of a spacing per flash. At 12: few
+  // gives 13, 14, 15 clockwise and 11, 10, 9 anticlockwise; more gives 25 or 23 when slow.
+  // Denser rings turn more slowly in degrees, since their spacing is smaller.
+  function countFor(density, way, speed, perRev) {
+    const base = Math.round(density * perRev * 1e6) / 1e6; // so 11.9999999 counts as 12
+    const count = way > 0 ? Math.floor(base) + speed : way < 0 ? Math.ceil(base) - speed : Math.round(base);
+    return Math.max(3, count);
+  }
+
+  const INTENTS = [];
+  for (let density = 1; density <= 3; density++) {
+    for (const way of [1, -1]) for (let speed = 1; speed <= 3; speed++) INTENTS.push({ density, way, speed });
+    INTENTS.push({ density, way: 0, speed: 1 });
+  }
+
+  // The intent behind a count at `perRev`, or null if it is none of them.
+  function countIntent(count, perRev) {
+    return INTENTS.find((i) => countFor(i.density, i.way, i.speed, perRev) === count) || null;
+  }
+
+  // The nearest intent to any count, for choosing from when it matches none.
+  function nearestIntent(count, perRev) {
+    const density = Math.min(3, Math.max(1, Math.round(count / perRev)));
+    const over = count - density * perRev;
+    const way = Math.abs(over) < 0.5 ? 0 : Math.sign(over);
+    return { density, way, speed: Math.min(3, Math.max(1, Math.round(Math.abs(over)))) };
+  }
+
   const api = {
     TAU,
     stepPerFlash,
@@ -102,6 +133,9 @@
     driftFraction,
     driftBand,
     countGuide,
+    countFor,
+    countIntent,
+    nearestIntent,
   };
 
   if (typeof module === 'object' && module.exports) {
