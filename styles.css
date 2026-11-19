@@ -390,3 +390,44 @@ body.technical input[type="color"].wide {
 .move-fields [hidden] {
   display: none !important;
 }
+
+/* Buttons acting as radio buttons: every option on one line. */
+.segmented {
+  grid-column: span 2;
+  display: flex;
+  min-width: 0;
+}
+
+.segmented button {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px 3px;
+  font-size: 0.85rem;
+  border: 1px solid var(--muted);
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.segmented button + button {
+  border-left: none;
+}
+
+.segmented button:first-child {
+  border-radius: 5px 0 0 5px;
+}
+
+.segmented button:last-child {
+  border-radius: 0 5px 5px 0;
+}
+
+.segmented button[aria-checked="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #222;
+  font-weight: 600;
+}

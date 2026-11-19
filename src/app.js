@@ -315,16 +315,11 @@
       if (Rc.setField(move, 'align', select.value)) onChange();
     });
 
-    const placeId = `move${move.id}-place`;
-    const placeLabel = el('label', { for: placeId }, 'Shapes sit');
-    const place = el('select', { id: placeId, class: 'wide' });
-    for (const [value, text] of [['inline', 'in line'], ['between', 'halfway between'], ['custom', 'elsewhere…']]) {
-      place.append(el('option', { value }, text));
-    }
     let custom = false; // chosen "elsewhere": keep the slider while it passes 0 or 0.5
-    place.addEventListener('change', () => {
-      custom = place.value === 'custom';
-      if (!custom && Rc.setField(move, 'offset', place.value === 'between' ? 0.5 : 0)) onChange();
+    const PLACES = [['inline', 'in line'], ['between', 'between', 'halfway between'], ['custom', 'elsewhere']];
+    const [placeLabel, place] = segmented(`move${move.id}-place`, 'Shapes sit', PLACES, (value) => {
+      custom = value === 'custom';
+      if (!custom && Rc.setField(move, 'offset', value === 'between' ? 0.5 : 0)) onChange();
       show();
     });
     const offset = fieldControls(move, offsetField, onChange, syncList); // label, slider, box
@@ -340,12 +335,13 @@
       select.value = move.align ?? '';
       const inactive = Rc.fieldInactive(recipe, move, 'align'); // e.g. anchored wings
       label.classList.toggle('inactive', inactive);
-      select.disabled = place.disabled = inactive;
+      select.disabled = inactive;
+      for (const button of place.buttons) button.disabled = inactive;
       label.hidden = select.hidden = !technical && (inactive || (!choices.length && !target));
 
       const off = move.offset || 0;
       if (Math.abs(off) > 1e-9 && Math.abs(Math.abs(off) - 0.5) > 1e-9) custom = true;
-      place.value = custom ? 'custom' : Math.abs(off) > 1e-9 ? 'between' : 'inline';
+      place.choose(custom ? 'custom' : Math.abs(off) > 1e-9 ? 'between' : 'inline');
       placeLabel.hidden = place.hidden = !target || (inactive && !technical);
       for (const node of offset) node.hidden = !technical && !(target && custom && !inactive);
     };
@@ -364,20 +360,41 @@
   };
   const INTENT_LABELS = { density: 'How many', way: 'Direction', speed: 'Speed' };
 
+  // A row of buttons acting as radio buttons, all options on one line. `pick` runs with the
+  // chosen value; a change event then bubbles up, so the card records an undo step.
+  // Returns the group, with `choose(value)` to show a value as chosen (none for null).
+  function segmented(id, labelText, choices, pick) {
+    const label = el('span', { id: `${id}-label`, class: 'seg-label' }, labelText);
+    const group = el('div', { id, class: 'segmented wide', role: 'radiogroup', 'aria-labelledby': `${id}-label` });
+    const buttons = choices.map(([value, text, title]) => {
+      const button = el('button', { type: 'button', role: 'radio', 'aria-checked': 'false' }, text);
+      if (title) button.title = title;
+      button.dataset.value = value;
+      button.addEventListener('click', () => {
+        pick(value);
+        group.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      group.append(button);
+      return button;
+    });
+    group.choose = (value) => {
+      for (const button of buttons) button.setAttribute('aria-checked', String(button.dataset.value === String(value)));
+    };
+    group.buttons = buttons;
+    return [label, group];
+  }
+
   function countControls(move, field, onChange, syncList) {
     const rows = {};
     for (const key of Object.keys(INTENT_CHOICES)) {
-      const id = `move${move.id}-${key}`;
-      const label = el('label', { for: id }, INTENT_LABELS[key]);
-      const select = el('select', { id, class: 'wide' });
-      select.addEventListener('change', () => {
+      const [label, group] = segmented(`move${move.id}-${key}`, INTENT_LABELS[key], INTENT_CHOICES[key], (value) => {
         const intent = { ...(M.countIntent(move.count, perRev) || M.nearestIntent(move.count, perRev)) };
-        intent[key] = Number(select.value);
+        intent[key] = value;
         sliding = false;
         if (Rc.setField(move, 'count', M.countFor(intent.density, intent.way, intent.speed, perRev))) onChange();
         show();
       });
-      rows[key] = { label, select };
+      rows[key] = { label, select: group };
     }
     const count = fieldControls(move, field, onChange, syncList); // label, slider, box
     // Once the slider is in use, it stays while it passes counts that match an intent.
@@ -388,12 +405,10 @@
       const intent = M.countIntent(move.count, perRev);
       const inactive = Rc.fieldInactive(recipe, move, 'count');
       for (const [key, { label, select }] of Object.entries(rows)) {
-        const choices = INTENT_CHOICES[key].map(([value, text]) =>
-          key === 'density' ? [value, `${text} (about ${Math.round(value * perRev)})`] : [value, text],
-        );
-        if (!intent) choices.unshift(['', '—']);
-        select.replaceChildren(...choices.map(([value, text]) => el('option', { value }, text)));
-        select.value = intent ? intent[key] : '';
+        if (key === 'density') {
+          select.buttons.forEach((button, i) => (button.title = `about ${Math.round((i + 1) * perRev)}`));
+        }
+        select.choose(intent ? intent[key] : null); // none chosen: the count matches no intent
         const hide = inactive || (key === 'speed' && intent && intent.way === 0);
         label.hidden = select.hidden = hide;
       }
