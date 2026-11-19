@@ -395,7 +395,7 @@
 
   // Whether a freeform ring has anything drawn, in any layer or key.
   function hasStrokes(move) {
-    return (move.layers || []).some((layer) => layer.A || layer.B);
+    return (move.layers || []).some((layer) => layer.keys.length);
   }
 
   // Whether a ring of marks animates: freeform, moving back and forth, with something drawn.
@@ -462,11 +462,10 @@
     return points;
   }
 
-  // A layer's strokes in key A and key B, paired in drawing order. A pair is resampled to
-  // matching points spaced along its length (a B stroke drawn the other way round is
-  // reversed) to blend. A stroke only in key B grows in, drawn on from where it starts;
-  // one only in key A shrinks away the same way. With nothing in key B yet, key A's
-  // strokes stay as they are.
+  // Two keys' strokes, paired in drawing order. A pair is resampled to matching points
+  // spaced along its length (the second drawn the other way round is reversed) to
+  // blend. A stroke only in the later key grows in, drawn on from where it starts; one
+  // only in the earlier key shrinks away the same way.
   function pairStrokes(a, b) {
     a = a || [];
     b = b || [];
@@ -474,7 +473,7 @@
     for (let i = 0; i < Math.max(a.length, b.length); i++) {
       let [strokeA, strokeB] = [a[i], b[i]];
       if (!strokeB) {
-        pairs.push(b.length ? { shrink: strokeA } : { still: strokeA });
+        pairs.push({ shrink: strokeA });
         continue;
       }
       if (!strokeA) {
@@ -491,55 +490,116 @@
     return pairs;
   }
 
-  // The strokes of paired strokes `u` of the way from key A to key B.
+  // The strokes of paired strokes `u` of the way from one key to the next.
   function blendPairs(pairs, u) {
     const strokes = [];
     for (const pair of pairs) {
-      if (pair.still) strokes.push(pair.still);
-      else if (pair.grow) strokes.push(partial(pair.grow, u));
+      if (pair.grow) strokes.push(partial(pair.grow, u));
       else if (pair.shrink) strokes.push(partial(pair.shrink, 1 - u));
       else strokes.push(pair.from.map(([x, y], i) => [x + (pair.to[i][0] - x) * u, y + (pair.to[i][1] - y) * u]));
     }
     return strokes.filter(Boolean);
   }
 
+  // Keys sit along the swing, `at` 0 at key A (the first frame) to 1 at key B (halfway
+  // round the cycle), so they keep their place when the number of frames changes. Two
+  // keys closer than KEY_GAP are the same key.
+  const KEY_GAP = 1e-3;
+
+  // Where the k-th of `frames` frames is along the swing: out to B and back again.
+  function swingAt(k, frames) {
+    const half = Math.floor(frames / 2);
+    const f = ((k % frames) + frames) % frames;
+    return f <= half ? f / half : (frames - f) / (frames - half);
+  }
+
+  // The frame (on the way out) nearest a place along the swing.
+  function frameAt(at, frames) {
+    return Math.round(at * Math.floor(frames / 2));
+  }
+
+  // A layer's keys, each with its pen worked out: a key's own width and colour, or else
+  // the key before's (the first key's is the layer's).
+  function keyPens(layer) {
+    let pen = { width: layer.width, colour: layer.colour };
+    return layer.keys.map((key, i) => {
+      if (i > 0) pen = { width: key.width ?? pen.width, colour: key.colour ?? pen.colour };
+      return pen;
+    });
+  }
+
+  // A layer `at` a place along the swing, as strokes and a pen: from each key to the next,
+  // eased (smooth slows into each key), held after the last key, and grown in from nothing
+  // before the first.
+  function layerAt(layer, at, easing = 'smooth') {
+    const keys = layer.keys;
+    const pens = keyPens(layer);
+    if (!keys.length) return { strokes: [], width: layer.width, colour: layer.colour };
+    const ease = (u) => (easing === 'even' ? u : (1 - Math.cos(Math.PI * u)) / 2);
+    let i = -1;
+    while (i + 1 < keys.length && keys[i + 1].at <= at + KEY_GAP) i++;
+    if (i === keys.length - 1) return { strokes: keys[i].strokes, ...pens[i] };
+    const [from, to] = i < 0 ? [{ at: 0, strokes: [] }, keys[0]] : [keys[i], keys[i + 1]];
+    const [penFrom, penTo] = i < 0 ? [pens[0], pens[0]] : [pens[i], pens[i + 1]];
+    const u = ease(to.at > from.at ? (at - from.at) / (to.at - from.at) : 1);
+    return {
+      strokes: blendPairs(pairStrokes(from.strokes, to.strokes), u),
+      width: penFrom.width + (penTo.width - penFrom.width) * u,
+      colour: mixColour(penFrom.colour, penTo.colour, u),
+    };
+  }
+
   // A ring of marks as an animation: `frames` in each cycle, and `layers(k)` the k-th
   // mark's drawing, as layers of strokes each with a pen (width and colour). Frame 0 is
-  // key A and frame floor(frames / 2) key B, the frames between them blended, pens too
-  // (smooth easing slows into each key). Played forwards or backwards it looks the same,
-  // so it does not matter which neighbour the strobe brings next. A ring that does not
-  // animate gives key A at every mark.
+  // key A and frame `keyB` (halfway) key B; `at(k)` is where frame k is along the swing.
+  // Played forwards or backwards it looks the same, so it does not matter which
+  // neighbour the strobe brings next. A ring that does not animate shows each layer's
+  // first key at every mark.
   function animationOf(move) {
     const layers = move.layers || [];
     if (!animated(move)) {
-      const still = layers.map((layer) => ({ strokes: layer.A || [], ...layerPens(layer).A }));
-      return { frames: 1, keyB: null, amount: () => 0, layers: () => still };
+      const still = layers.map((layer) => layerAt(layer, 0, 'even'));
+      return { frames: 1, keyB: null, at: () => 0, layers: () => still };
     }
     const frames = move.count / repeatsOf(move);
-    const half = Math.floor(frames / 2);
-    const prepared = layers.map((layer) => ({ pairs: pairStrokes(layer.A, layer.B), pens: layerPens(layer) }));
-    const amount = (f) => {
-      const u = f <= half ? f / half : (frames - f) / (frames - half);
-      return move.easing === 'even' ? u : (1 - Math.cos(Math.PI * u)) / 2;
+    const at = (k) => swingAt(k, frames);
+    const cache = new Map(); // mirrored frames are the same
+    const layersAt = (k) => {
+      const t = at(k);
+      if (!cache.has(t)) cache.set(t, layers.map((layer) => layerAt(layer, t, move.easing)));
+      return cache.get(t);
     };
-    const at = (u) =>
-      prepared.map(({ pairs, pens }) => ({
-        strokes: blendPairs(pairs, u),
-        width: pens.A.width + (pens.B.width - pens.A.width) * u,
-        colour: mixColour(pens.A.colour, pens.B.colour, u),
-      }));
-    return { frames, keyB: half, amount: (k) => amount(k % frames), layers: (k) => at(amount(k % frames)) };
-  }
-
-  // A layer's pen in each key: key B's its own, or else key A's.
-  function layerPens(layer) {
-    const A = { width: layer.width, colour: layer.colour };
-    return { A, B: { width: layer.widthB ?? A.width, colour: layer.colourB ?? A.colour } };
+    return { frames, keyB: Math.floor(frames / 2), at, layers: layersAt };
   }
 
   // A new layer, drawn with the given pen (e.g. the ring's, or the layer before's).
   function newLayer(pen) {
-    return { A: null, B: null, width: pen.width, colour: pen.colour || INK, widthB: null, colourB: null };
+    return { width: pen.width, colour: pen.colour || INK, keys: [] };
+  }
+
+  // The index of a layer's key at a place along the swing, or -1.
+  function keyIndex(layer, at) {
+    return layer.keys.findIndex((key) => Math.abs(key.at - at) < KEY_GAP);
+  }
+
+  // A copy of a layer with its key at `at` given these strokes: added if new, removed if
+  // there are none.
+  function withKeyStrokes(layer, at, strokes) {
+    const keys = layer.keys.filter((key) => Math.abs(key.at - at) >= KEY_GAP);
+    const old = layer.keys[keyIndex(layer, at)];
+    if (strokes && strokes.length) keys.push({ width: null, colour: null, ...old, at, strokes });
+    keys.sort((a, b) => a.at - b.at);
+    return { ...layer, keys };
+  }
+
+  // A copy of a layer with the pen of its key at `at` changed (`prop` 'width' or
+  // 'colour'). The first key's pen is the layer's own; later keys follow the key before
+  // until given their own.
+  function withKeyPen(layer, at, prop, value) {
+    const i = keyIndex(layer, at);
+    if (i <= 0) return { ...layer, [prop]: value };
+    const keys = layer.keys.map((key, j) => (j === i ? { ...key, [prop]: value } : key));
+    return { ...layer, keys };
   }
 
   // A colour `u` of the way from #rrggbb `a` to `b`.
@@ -572,28 +632,39 @@
     return strokes.length ? strokes : null;
   }
 
-  // A freeform ring's layers, kept valid: up to MAX_LAYERS, each with its strokes in key
-  // A and key B (see cleanDrawing), and its pen in each key (B's null to follow A's).
-  // Anything unreadable gives undefined.
+  // A freeform ring's layers, kept valid: up to MAX_LAYERS, each with its pen and up to
+  // MAX_KEYS keys, each key a place along the swing (0 to 1), its strokes (see
+  // cleanDrawing; a key with none is dropped) and its pen (null to follow the key
+  // before's). Layers saved with key A and key B (before keys could go anywhere) become
+  // keys at 0 and 1. Anything unreadable gives undefined.
   const MAX_LAYERS = 8;
+  const MAX_KEYS = 24;
   function cleanLayers(value) {
     if (value === null || value === undefined) return [];
     if (!Array.isArray(value)) return undefined;
+    const width = (w) => (Number.isFinite(w) ? Math.min(0.2, Math.max(0.002, w)) : null);
+    const colour = (c) => (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c) ? c.toLowerCase() : null);
     const layers = [];
     for (const layer of value.slice(0, MAX_LAYERS)) {
       if (!layer || typeof layer !== 'object') return undefined;
-      const [A, B] = [cleanDrawing(layer.A), cleanDrawing(layer.B)];
-      if (A === undefined || B === undefined) return undefined;
-      const width = (w) => Math.min(0.2, Math.max(0.002, w));
-      const colour = (c) => (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c) ? c.toLowerCase() : null);
-      layers.push({
-        A,
-        B,
-        width: Number.isFinite(layer.width) ? width(layer.width) : 0.012,
-        colour: colour(layer.colour) || INK,
-        widthB: Number.isFinite(layer.widthB) ? width(layer.widthB) : null,
-        colourB: colour(layer.colourB),
-      });
+      let saved = layer.keys;
+      if (!Array.isArray(saved)) {
+        saved = [
+          { at: 0, strokes: layer.A },
+          { at: 1, strokes: layer.B, width: layer.widthB, colour: layer.colourB },
+        ];
+      }
+      const keys = [];
+      for (const key of saved.slice(0, MAX_KEYS)) {
+        if (!key || typeof key !== 'object' || !Number.isFinite(key.at)) return undefined;
+        const strokes = cleanDrawing(key.strokes);
+        if (strokes === undefined) return undefined;
+        const at = Math.round(Math.min(1, Math.max(0, key.at)) * 1e4) / 1e4;
+        if (!strokes || keys.some((k) => Math.abs(k.at - at) < KEY_GAP)) continue;
+        keys.push({ at, strokes, width: width(key.width), colour: colour(key.colour) });
+      }
+      keys.sort((a, b) => a.at - b.at);
+      layers.push({ width: width(layer.width) ?? 0.012, colour: colour(layer.colour) || INK, keys });
     }
     return layers;
   }
@@ -1093,7 +1164,13 @@
     resample,
     pairStrokes,
     animationOf,
-    layerPens,
+    keyPens,
+    layerAt,
+    swingAt,
+    frameAt,
+    keyIndex,
+    withKeyStrokes,
+    withKeyPen,
     newLayer,
     cleanLayers,
     hasStrokes,

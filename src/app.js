@@ -161,10 +161,14 @@
   // the pen width and colour in proportion to the shape's length.
   // Layers: chips choose the layer to draw on (+ adds one), each with its own pen; the
   // other layers show faintly behind it. Once the ring animates, a strip of its frames
-  // sits above the pad: key A and key B are drawn there (each key showing the other
-  // faintly, and key B the stroke of A it should match next), the frames between them
-  // are generated and can be looked at, and ▶ plays them. The pen row sets the pen of
-  // the layer in the key shown (key B's follows key A's until changed).
+  // sits above the pad, keys marked (A first, B halfway). Any frame can be drawn on,
+  // making it a key of the current layer: the keys either side show faintly, and the
+  // stroke of the key before to match next is highlighted. Copy here makes a key from a
+  // generated frame, to add to; ▶ plays the frames. The pen row sets the pen of the
+  // current layer's key on the pad (a key follows the key before's until changed).
+  // The frame and layer each ring's pad shows, kept while its card is rebuilt (e.g. by undo).
+  const padPlaces = new Map();
+
   function drawingPad(move, field, onChange, syncList) {
     const wrap = el('div', { class: 'drawing-pad' });
     const strip = el('div', { class: 'frame-strip' });
@@ -173,8 +177,11 @@
     strip.append(play, frames);
     const canvas = el('canvas', { class: 'pad' });
     canvas.setAttribute('aria-label', 'Draw the shape: up is towards the rim');
-    const clear = el('button', { type: 'button' }, 'Clear');
     const note = el('p', { class: 'note' });
+    const copy = el('button', { type: 'button', title: 'Make this frame a key, as generated, to add to' }, 'Copy here');
+    const clear = el('button', { type: 'button' }, 'Clear');
+    const buttons = el('div', { class: 'buttons' });
+    buttons.append(copy, clear);
 
     const chips = el('div', { class: 'layer-chips' });
     const widthField = Rc.MOVE_TYPES[move.type].fields.find((f) => f.key === 'width');
@@ -186,30 +193,31 @@
     const pen = el('div', { class: 'key-pen' });
     pen.append(penCaption, penRange, penColour);
     const side = el('div', { class: 'pad-side' });
-    side.append(note, chips, pen, clear);
+    side.append(note, chips, pen, buttons);
     const row = el('div', { class: 'pad-row' });
     row.append(canvas, side);
     wrap.append(strip, row);
 
-    let view = 'A'; // the key being drawn, 'A' or 'B', or a generated frame's index to look at
-    let layer = 0; // the layer being drawn on
+    const place = padPlaces.get(move.id) || { frame: 0, layer: 0 };
+    let frame = place.frame; // the frame on the pad (0, key A, when not animated)
+    let layer = place.layer; // the layer being drawn on
     let stroke = null; // the stroke being drawn, as points in the square from -1 to 1
     let playing = null; // the timer while the frames play
-    let beforePlay = 'A'; // what to show again when they stop
+    let beforePlay = 0; // the frame to show again when they stop
     let wasAnimated = Rc.animated(move);
-    const looking = () => typeof view === 'number';
-    const key = () => (view === 'B' && Rc.animated(move) ? 'B' : 'A');
+    const animation = () => Rc.animationOf(move);
+    const at = () => animation().at(frame); // where the frame is along the swing
     const layers = () => move.layers || [];
     const current = () => layers()[layer];
-    const strokesOf = (l, k) => (l && l[k]) || [];
+    const keyHere = () => (current() ? current().keys[Rc.keyIndex(current(), at())] : undefined);
     const padWidth = (width) => Math.max(0.02, (2 * width) / move.length);
 
     // Change the current layer (making the first if there is none) and record it.
     function editLayer(change) {
-      const list = layers().map((l) => ({ ...l }));
+      const list = layers().slice();
       if (!list.length) list.push(Rc.newLayer(move));
       layer = Math.min(layer, list.length - 1);
-      change(list[layer], list);
+      list[layer] = change(list[layer]);
       return Rc.setField(move, field.key, list);
     }
     const changed = () => {
@@ -219,14 +227,23 @@
     };
 
     clear.addEventListener('click', () => {
-      if (looking() || !current()) return;
-      // Clearing an empty layer (not the only one) removes it.
       const l = current();
-      const empty = !l.A && !l.B;
-      if (empty && layers().length > 1) {
+      if (!l) return;
+      if (!l.keys.length && layers().length > 1) {
+        // An empty layer (not the only one): remove it.
         Rc.setField(move, field.key, layers().filter((_, i) => i !== layer));
         layer = Math.max(0, layer - 1);
-      } else editLayer((l) => (l[key()] = null));
+      } else editLayer((l) => Rc.withKeyStrokes(l, at(), null));
+      changed();
+    });
+    copy.addEventListener('click', () => {
+      const shown = Rc.layerAt(current(), at(), move.easing);
+      const strokes = shown.strokes.map((points) => Rc.simplifyStroke(points, 0.004));
+      editLayer((l) => {
+        const withKey = Rc.withKeyStrokes(l, at(), strokes);
+        // Its pen as generated, so nothing jumps.
+        return Rc.withKeyPen(Rc.withKeyPen(withKey, at(), 'width', shown.width), at(), 'colour', shown.colour);
+      });
       changed();
     });
 
@@ -236,7 +253,6 @@
     };
     canvas.addEventListener('pointerdown', (event) => {
       stopPlaying();
-      if (looking()) return; // a generated frame: look, don't draw
       try {
         canvas.setPointerCapture(event.pointerId); // keep the stroke if the pen strays off the pad
       } catch {}
@@ -252,63 +268,58 @@
       if (!stroke) return;
       const done = Rc.simplifyStroke(stroke, 0.008);
       stroke = null;
-      const k = key();
-      if (editLayer((l) => (l[k] = [...strokesOf(l, k), done]))) changed();
+      const key = keyHere();
+      if (editLayer((l) => Rc.withKeyStrokes(l, at(), [...(key ? key.strokes : []), done]))) changed();
     };
     canvas.addEventListener('pointerup', finish);
     canvas.addEventListener('pointercancel', finish);
 
-    // The pen of the current layer in the key shown (blended, on a generated frame).
+    // The pen of the current layer on the pad: its key's, or as generated.
     function shownPen() {
       const l = current();
       if (!l) return { width: move.width, colour: move.colour };
-      if (looking()) return Rc.animationOf(move).layers(view)[layer];
-      return Rc.layerPens(l)[key()];
+      return Rc.layerAt(l, at(), move.easing);
     }
-    // A layer with nothing in key A (e.g. rays growing in) has one pen: set in either key.
+    const penFree = () => !current() || !current().keys.length || !!keyHere(); // a key, or nothing yet
     const setPen = (prop, value) => {
-      const v = prop === 'width' ? Number(value) : value;
-      editLayer((l) => {
-        if (key() === 'A' || !l.A) l[prop] = v;
-        l[`${prop}B`] = key() === 'B' && l.A ? v : l.A ? l[`${prop}B`] : null;
-      });
+      if (!penFree()) return;
+      editLayer((l) => Rc.withKeyPen(l, at(), prop, prop === 'width' ? Number(value) : value));
       onChange();
       repaint();
     };
     penRange.addEventListener('input', () => setPen('width', penRange.value));
     penColour.addEventListener('input', () => setPen('colour', penColour.value));
 
-    function show(next) {
-      view = next;
-      repaint();
-    }
-
     function stopPlaying() {
       if (!playing) return;
       clearInterval(playing);
       playing = null;
       play.textContent = '▶';
-      show(beforePlay);
+      frame = beforePlay;
+      repaint();
     }
     play.addEventListener('click', () => {
       if (playing) return stopPlaying();
-      const animation = Rc.animationOf(move);
+      const count = animation().frames;
       let k = 0;
-      beforePlay = view;
+      beforePlay = frame;
       play.textContent = '■';
       playing = setInterval(() => {
         if (!wrap.isConnected) return clearInterval(playing);
-        view = k++ % animation.frames;
+        frame = k++ % count;
         repaint();
       }, 1000 / 12);
     });
 
-    // Chips for the layers, in their colours, the current one outlined, then +.
+    // A frame's name: key A, key B, or its number.
+    const frameName = (k) => (k === 0 ? 'key A' : k === animation().keyB ? 'key B' : `frame ${k + 1}`);
+
+    // Chips for the layers, in their colours on this frame, the current one outlined, then +.
     function paintChips() {
       const list = layers();
       const buttons = list.map((l, i) => {
         const chip = el('button', { type: 'button', class: 'chip', 'aria-pressed': String(i === layer) }, String(i + 1));
-        chip.style.setProperty('--chip', Rc.layerPens(l)[key()].colour);
+        chip.style.setProperty('--chip', Rc.layerAt(l, at(), move.easing).colour);
         chip.title = `Layer ${i + 1}`;
         chip.addEventListener('click', () => {
           layer = i;
@@ -319,10 +330,9 @@
       const add = el('button', { type: 'button', class: 'chip add', title: 'Add a layer, with its own pen' }, '+');
       add.disabled = !list.length || list.length >= 8;
       add.addEventListener('click', () => {
-        const from = Rc.layerPens(current()).A;
-        Rc.setField(move, field.key, [...list, Rc.newLayer(from)]);
+        const { width, colour } = shownPen();
+        Rc.setField(move, field.key, [...list, Rc.newLayer({ width, colour })]);
         layer = list.length;
-        if (looking()) view = 'A';
         changed();
       });
       chips.replaceChildren(...buttons, add);
@@ -330,26 +340,32 @@
 
     function setNote() {
       const l = current();
-      const a = strokesOf(l, 'A').length;
-      const b = strokesOf(l, 'B').length;
-      const name = layers().length > 1 ? `Layer ${layer + 1}, key` : 'Key';
-      if (!Rc.animated(move)) note.textContent = 'Draw one shape. Up is towards the rim.';
-      else if (looking()) note.textContent = `Frame ${view + 1} of ${Rc.animationOf(move).frames}. Pick A or B to draw.`;
-      else if (view === 'A' && !a && b) note.textContent = `${name} A is empty, so key B’s strokes grow in.`;
-      else if (view === 'A') {
-        note.textContent = b && a > b ? `${name} A. Strokes not in key B shrink away.` : `${name} A. Its strokes pair, in order, with key B’s.`;
-      } else if (!a) note.textContent = `${name} B. Strokes here grow in from where you start them.`;
-      else if (b < a) note.textContent = `${name} B: draw stroke ${b + 1} of ${a}, matching the highlighted one.`;
-      else if (b === a) note.textContent = `${name} B matches key A. More strokes grow in.`;
-      else note.textContent = `${name} B: ${b - a} more stroke${b - a > 1 ? 's' : ''} grow${b - a > 1 ? '' : 's'} in.`;
-      clear.disabled = looking() || !l;
-      clear.textContent = l && !l.A && !l.B && layers().length > 1 ? 'Remove layer' : 'Clear';
-      canvas.classList.toggle('looking', looking());
+      const keys = l ? l.keys : [];
+      const i = l ? Rc.keyIndex(l, at()) : -1;
+      const name = (layers().length > 1 ? `Layer ${layer + 1}, ` : '') + frameName(frame);
+      const Name = name[0].toUpperCase() + name.slice(1);
+      const animated = Rc.animated(move);
+      if (!animated) note.textContent = 'Draw one shape. Up is towards the rim.';
+      else if (!keys.length) note.textContent = `${Name}: nothing on this layer yet. Draw to make a key here.`;
+      else if (i < 0) note.textContent = `${Name}, generated. Draw to make it a key, or copy it here to add to.`;
+      else {
+        const before = keys.filter((k) => k.at < keys[i].at - 1e-3).pop();
+        const a = before ? before.strokes.length : 0;
+        const b = keys[i].strokes.length;
+        if (!before) note.textContent = keys.length > 1 ? `${Name}: its strokes pair, in order, with the next key’s.` : `${Name}.`;
+        else if (b < a) note.textContent = `${Name}: draw stroke ${b + 1} of ${a}, matching the highlighted one.`;
+        else if (b === a) note.textContent = `${Name} matches the key before. More strokes grow in.`;
+        else note.textContent = `${Name}: ${b - a} more stroke${b - a > 1 ? 's' : ''} than the key before, growing in.`;
+      }
+      const isKey = i >= 0;
+      copy.hidden = !animated || isKey || !keys.length;
+      clear.hidden = !l || (!isKey && (keys.length || layers().length < 2));
+      clear.textContent = l && !keys.length ? 'Remove layer' : animated ? 'Clear key' : 'Clear';
       const { width, colour } = shownPen();
       penRange.value = width;
       penColour.value = colour;
-      penRange.disabled = penColour.disabled = looking(); // generated: blended
-      penCaption.textContent = looking() ? 'Pen (blended)' : Rc.animated(move) ? `Pen, key ${view}` : 'Pen';
+      penRange.disabled = penColour.disabled = !penFree(); // generated: blended
+      penCaption.textContent = !penFree() ? 'Pen (generated)' : animated ? `Pen, ${frameName(frame)}` : 'Pen';
       penRange.title = `Pen width: ${Number(width).toFixed(3)}`;
     }
 
@@ -376,68 +392,82 @@
       c.textAlign = 'right';
       c.fillText('↑ rim', size - 6, size / 12);
       c.textAlign = 'left';
-      if (Rc.animated(move)) c.fillText(looking() ? `${view + 1}` : view, 6, size / 12);
+      const animated = Rc.animated(move);
+      if (animated) c.fillText(frame === 0 ? 'A' : frame === animation().keyB ? 'B' : `${frame + 1}`, 6, size / 12);
 
-      if (looking()) {
-        for (const l of Rc.animationOf(move).layers(view)) strokeOn(c, size, l.strokes, l.colour, padWidth(l.width));
-        return;
-      }
-      const k = key();
-      // Behind: the other layers in this key, faintly in their colours.
+      const t = at();
+      // Behind: the other layers on this frame, faintly in their colours.
       c.globalAlpha = 0.3;
       layers().forEach((l, i) => {
-        if (i !== layer) strokeOn(c, size, strokesOf(l, k), l.colour, padWidth(Rc.layerPens(l)[k].width));
+        if (i === layer) return;
+        const shown = Rc.layerAt(l, t, move.easing);
+        strokeOn(c, size, shown.strokes, shown.colour, padWidth(shown.width));
       });
       c.globalAlpha = 1;
       const l = current();
-      if (Rc.animated(move) && l) {
-        // Onion skin: this layer in the other key; drawing B, the stroke of A to match next.
-        const otherKey = k === 'A' ? 'B' : 'A';
-        const other = strokesOf(l, otherKey);
-        const otherWidth = padWidth(Rc.layerPens(l)[otherKey].width);
-        strokeOn(c, size, other, 'rgba(0, 0, 0, 0.12)', otherWidth);
-        const next = other[strokesOf(l, 'B').length];
-        if (k === 'B' && next) strokeOn(c, size, [next], 'rgba(240, 160, 40, 0.55)', otherWidth);
+      const key = keyHere();
+      if (animated && l) {
+        // Onion skin: this layer's keys either side; the stroke of the one before to match next.
+        const pens = Rc.keyPens(l);
+        const before = l.keys.findLastIndex((k) => k.at < t - 1e-3);
+        const after = l.keys.findIndex((k) => k.at > t + 1e-3);
+        for (const i of [before, after]) {
+          if (i >= 0) strokeOn(c, size, l.keys[i].strokes, 'rgba(0, 0, 0, 0.12)', padWidth(pens[i].width));
+        }
+        const next = before >= 0 && l.keys[before].strokes[key ? key.strokes.length : 0];
+        if (next) strokeOn(c, size, [next], 'rgba(240, 160, 40, 0.55)', padWidth(pens[before].width));
+        if (!key) {
+          // A generated frame: what is there now, a little faded.
+          const shown = Rc.layerAt(l, t, move.easing);
+          c.globalAlpha = 0.5;
+          strokeOn(c, size, shown.strokes, shown.colour, padWidth(shown.width));
+          c.globalAlpha = 1;
+        }
       }
       const { width, colour } = shownPen();
-      strokeOn(c, size, [...strokesOf(l, k), ...(stroke ? [stroke] : [])], colour, padWidth(width));
+      strokeOn(c, size, [...(key ? key.strokes : []), ...(stroke ? [stroke] : [])], colour, padWidth(width));
     }
 
-    // The frames as small buttons: keys marked A and B, the one shown outlined.
+    // The frames as small buttons: keys (in any layer) marked, the one on the pad outlined.
     function paintStrip() {
       strip.hidden = !Rc.animated(move);
       if (strip.hidden) return;
-      const animation = Rc.animationOf(move);
-      if (frames.children.length !== animation.frames) {
+      const anim = animation();
+      if (frames.children.length !== anim.frames) {
         frames.replaceChildren();
-        for (let k = 0; k < animation.frames; k++) {
-          const name = k === 0 ? 'A' : k === animation.keyB ? 'B' : null;
-          const button = el('button', { type: 'button', class: name ? 'frame key' : 'frame' });
-          button.title = name ? `Key ${name}: draw it` : `Frame ${k + 1}, generated`;
-          button.append(el('canvas'));
-          if (name) button.append(el('span', {}, name));
+        for (let k = 0; k < anim.frames; k++) {
+          const button = el('button', { type: 'button', class: 'frame' });
+          button.append(el('canvas'), el('span'));
           button.addEventListener('click', () => {
             stopPlaying();
-            show(name || k);
+            frame = k;
+            repaint();
           });
           frames.append(button);
         }
       }
       [...frames.children].forEach((button, k) => {
-        const name = k === 0 ? 'A' : k === animation.keyB ? 'B' : null;
-        button.setAttribute('aria-pressed', String(view === k || view === name));
+        const t = anim.at(k);
+        const isKey = layers().some((l) => Rc.keyIndex(l, t) >= 0);
+        const label = k === 0 ? 'A' : k === anim.keyB ? 'B' : isKey ? '•' : '';
+        button.classList.toggle('key', isKey);
+        button.querySelector('span').textContent = label;
+        button.title = `${frameName(k)[0].toUpperCase()}${frameName(k).slice(1)}${isKey ? ' (a key)' : ', generated'}: click to draw on it`;
+        button.setAttribute('aria-pressed', String(k === frame));
         const thumb = button.querySelector('canvas');
         const size = Math.round(24 * (window.devicePixelRatio || 1));
         thumb.width = thumb.height = size;
         const c = thumb.getContext('2d');
         c.fillStyle = '#fafaf5';
         c.fillRect(0, 0, size, size);
-        for (const l of animation.layers(k)) strokeOn(c, size, l.strokes, l.colour, Math.max(0.06, padWidth(l.width)));
+        for (const l of anim.layers(k)) strokeOn(c, size, l.strokes, l.colour, Math.max(0.06, padWidth(l.width)));
       });
     }
 
     function repaint() {
       layer = Math.max(0, Math.min(layer, layers().length - 1));
+      if (!Rc.animated(move) || frame >= animation().frames) frame = 0;
+      if (!playing) padPlaces.set(move.id, { frame, layer });
       paintChips();
       paint();
       paintStrip();
@@ -447,9 +477,8 @@
     syncList.push(() => {
       wrap.hidden = Rc.fieldInactive(recipe, move, field.key);
       const animated = Rc.animated(move);
-      if (animated && !wasAnimated && !layers().some((l) => l.B)) view = 'B'; // just set moving: draw key B next
-      if (!animated && view !== 'A') view = 'A';
-      if (looking() && view >= Rc.animationOf(move).frames) view = 'A';
+      // Just set moving, with only key A drawn: draw key B next.
+      if (animated && !wasAnimated && layers().every((l) => l.keys.every((k) => k.at === 0))) frame = animation().keyB;
       wasAnimated = animated;
       requestAnimationFrame(repaint); // once shown, so it has a size
     });
