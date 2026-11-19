@@ -485,3 +485,164 @@ button.cycle:disabled {
   color: var(--muted);
   cursor: default;
 }
+
+/* A freeform shape, drawn by hand: the frames when animated, then the pad with a note
+   and Clear beside it. */
+.drawing-pad {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.drawing-pad canvas.pad {
+  width: 180px;
+  max-width: 60%;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.pad-side {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.pad-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.drawing-pad canvas.pad.looking {
+  cursor: default;
+}
+
+/* An animated drawing's frames: keys A and B marked, the one on the pad outlined. */
+.frame-strip {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.frame-strip[hidden] {
+  display: none;
+}
+
+.frames {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.frame-strip button {
+  position: relative;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.frame-strip button.play {
+  padding: 2px 8px;
+  border: 1px solid var(--muted);
+  line-height: normal;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.frame canvas {
+  width: 24px;
+  height: 24px;
+  aspect-ratio: auto;
+  border-radius: 2px;
+  opacity: 0.75;
+}
+
+.frame.key canvas {
+  opacity: 1;
+}
+
+.frame.key {
+  border-color: var(--muted);
+}
+
+.frame span {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  font-size: 0.6rem;
+  line-height: 1;
+  font-weight: 700;
+  color: #333;
+}
+
+.frame[aria-pressed="true"] {
+  border-color: var(--accent);
+}
+
+/* The pen of the key on the pad: its width and colour. */
+.key-pen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  width: 100%;
+}
+
+.key-pen[hidden] {
+  display: none;
+}
+
+.key-pen .cycle-caption {
+  flex-basis: 100%;
+  text-align: left;
+}
+
+.key-pen input[type="range"] {
+  flex: 1 1 60px;
+  min-width: 0;
+}
+
+.key-pen input[type="color"] {
+  width: 32px;
+  flex: 0 0 auto;
+}
+
+/* Layer chips: each in its layer's colour, the one being drawn on outlined. */
+.layer-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.layer-chips .chip {
+  min-width: 24px;
+  height: 22px;
+  padding: 0 5px;
+  border: 2px solid transparent;
+  border-radius: 11px;
+  background: var(--chip, var(--bg));
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-shadow: 0 0 2px #000;
+  cursor: pointer;
+}
+
+.layer-chips .chip[aria-pressed="true"] {
+  border-color: var(--accent);
+}
+
+.layer-chips .chip.add {
+  border: 1px dashed var(--muted);
+  color: var(--text);
+  text-shadow: none;
+}

@@ -138,10 +138,358 @@
     for (const input of inputs) input.disabled = inactive;
   }
 
+  // Strokes (points in the square from -1 to 1) drawn on a square canvas `size` across.
+  function strokeOn(c, size, strokes, colour, width) {
+    c.save();
+    c.setTransform(size / 2, 0, 0, size / 2, size / 2, size / 2);
+    c.beginPath();
+    for (const points of strokes) {
+      c.moveTo(...points[0]);
+      for (const point of points.slice(1)) c.lineTo(...point);
+      if (points.length === 1) c.lineTo(...points[0]);
+    }
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    c.strokeStyle = colour;
+    c.lineWidth = width;
+    c.stroke();
+    c.restore();
+  }
+
+  // A square to draw a freeform shape in, shown while the shape is freeform. Up is towards
+  // the rim. Each stroke is added when the pen lifts (one undo step), and the pad shows
+  // the pen width and colour in proportion to the shape's length.
+  // Layers: chips choose the layer to draw on (+ adds one), each with its own pen; the
+  // other layers show faintly behind it. Once the ring animates, a strip of its frames
+  // sits above the pad, keys marked (A first, B halfway). Any frame can be drawn on,
+  // making it a key of the current layer: the keys either side show faintly, and the
+  // stroke of the key before to match next is highlighted. Copy here makes a key from a
+  // generated frame, to add to; ▶ plays the frames. The pen row sets the pen of the
+  // current layer's key on the pad (a key follows the key before's until changed).
+  // The frame and layer each ring's pad shows, kept while its card is rebuilt (e.g. by undo).
+  const padPlaces = new Map();
+
+  function drawingPad(move, field, onChange, syncList) {
+    const wrap = el('div', { class: 'drawing-pad' });
+    const strip = el('div', { class: 'frame-strip' });
+    const play = el('button', { type: 'button', class: 'play', title: 'Play the frames' }, '▶');
+    const frames = el('div', { class: 'frames' });
+    strip.append(play, frames);
+    const canvas = el('canvas', { class: 'pad' });
+    canvas.setAttribute('aria-label', 'Draw the shape: up is towards the rim');
+    const note = el('p', { class: 'note' });
+    const copy = el('button', { type: 'button', title: 'Make this frame a key, as generated, to add to' }, 'Copy here');
+    const clear = el('button', { type: 'button' }, 'Clear');
+    const buttons = el('div', { class: 'buttons' });
+    buttons.append(copy, clear);
+
+    const chips = el('div', { class: 'layer-chips' });
+    const widthField = Rc.MOVE_TYPES[move.type].fields.find((f) => f.key === 'width');
+    const penRange = el('input', { type: 'range', min: widthField.min, max: widthField.max, step: widthField.step });
+    penRange.setAttribute('aria-label', 'Pen width of this layer');
+    const penColour = el('input', { type: 'color' });
+    penColour.setAttribute('aria-label', 'Colour of this layer');
+    const penCaption = el('span', { class: 'cycle-caption' });
+    const pen = el('div', { class: 'key-pen' });
+    pen.append(penCaption, penRange, penColour);
+    const side = el('div', { class: 'pad-side' });
+    side.append(note, chips, pen, buttons);
+    const row = el('div', { class: 'pad-row' });
+    row.append(canvas, side);
+    wrap.append(strip, row);
+
+    const place = padPlaces.get(move.id) || { frame: 0, layer: 0 };
+    let frame = place.frame; // the frame on the pad (0, key A, when not animated)
+    let layer = place.layer; // the layer being drawn on
+    let stroke = null; // the stroke being drawn, as points in the square from -1 to 1
+    let playing = null; // the timer while the frames play
+    let beforePlay = 0; // the frame to show again when they stop
+    let wasAnimated = Rc.animated(move);
+    const animation = () => Rc.animationOf(move);
+    const at = () => animation().at(frame); // where the frame is along the swing
+    const layers = () => move.layers || [];
+    const current = () => layers()[layer];
+    const keyHere = () => (current() ? current().keys[Rc.keyIndex(current(), at())] : undefined);
+    const padWidth = (width) => Math.max(0.02, (2 * width) / move.length);
+
+    // Change the current layer (making the first if there is none) and record it.
+    function editLayer(change) {
+      const list = layers().slice();
+      if (!list.length) list.push(Rc.newLayer(move));
+      layer = Math.min(layer, list.length - 1);
+      list[layer] = change(list[layer]);
+      return Rc.setField(move, field.key, list);
+    }
+    const changed = () => {
+      onChange();
+      repaint();
+      wrap.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
+    clear.addEventListener('click', () => {
+      const l = current();
+      if (!l) return;
+      if (!l.keys.length && layers().length > 1) {
+        // An empty layer (not the only one): remove it.
+        Rc.setField(move, field.key, layers().filter((_, i) => i !== layer));
+        layer = Math.max(0, layer - 1);
+      } else editLayer((l) => Rc.withKeyStrokes(l, at(), null));
+      changed();
+    });
+    copy.addEventListener('click', () => {
+      const shown = Rc.layerAt(current(), at(), move.easing);
+      const strokes = shown.strokes.map((points) => Rc.simplifyStroke(points, 0.004));
+      editLayer((l) => {
+        const withKey = Rc.withKeyStrokes(l, at(), strokes);
+        // Its pen as generated, so nothing jumps.
+        return Rc.withKeyPen(Rc.withKeyPen(withKey, at(), 'width', shown.width), at(), 'colour', shown.colour);
+      });
+      changed();
+    });
+
+    const toSquare = (event) => {
+      const box = canvas.getBoundingClientRect();
+      return [((event.clientX - box.left) / box.width) * 2 - 1, ((event.clientY - box.top) / box.height) * 2 - 1];
+    };
+    canvas.addEventListener('pointerdown', (event) => {
+      stopPlaying();
+      try {
+        canvas.setPointerCapture(event.pointerId); // keep the stroke if the pen strays off the pad
+      } catch {}
+      stroke = [toSquare(event)];
+      paint();
+    });
+    canvas.addEventListener('pointermove', (event) => {
+      if (!stroke) return;
+      stroke.push(toSquare(event));
+      paint();
+    });
+    const finish = () => {
+      if (!stroke) return;
+      const done = Rc.simplifyStroke(stroke, 0.008);
+      stroke = null;
+      const key = keyHere();
+      if (editLayer((l) => Rc.withKeyStrokes(l, at(), [...(key ? key.strokes : []), done]))) changed();
+    };
+    canvas.addEventListener('pointerup', finish);
+    canvas.addEventListener('pointercancel', finish);
+
+    // The pen of the current layer on the pad: its key's, or as generated.
+    function shownPen() {
+      const l = current();
+      if (!l) return { width: move.width, colour: move.colour };
+      return Rc.layerAt(l, at(), move.easing);
+    }
+    const penFree = () => !current() || !current().keys.length || !!keyHere(); // a key, or nothing yet
+    const setPen = (prop, value) => {
+      if (!penFree()) return;
+      editLayer((l) => Rc.withKeyPen(l, at(), prop, prop === 'width' ? Number(value) : value));
+      onChange();
+      repaint();
+    };
+    penRange.addEventListener('input', () => setPen('width', penRange.value));
+    penColour.addEventListener('input', () => setPen('colour', penColour.value));
+
+    function stopPlaying() {
+      if (!playing) return;
+      clearInterval(playing);
+      playing = null;
+      play.textContent = '▶';
+      frame = beforePlay;
+      repaint();
+    }
+    play.addEventListener('click', () => {
+      if (playing) return stopPlaying();
+      const count = animation().frames;
+      let k = 0;
+      beforePlay = frame;
+      play.textContent = '■';
+      playing = setInterval(() => {
+        if (!wrap.isConnected) return clearInterval(playing);
+        frame = k++ % count;
+        repaint();
+      }, 1000 / 12);
+    });
+
+    // A frame's name: key A, key B, or its number.
+    const frameName = (k) => (k === 0 ? 'key A' : k === animation().keyB ? 'key B' : `frame ${k + 1}`);
+
+    // Chips for the layers, in their colours on this frame, the current one outlined, then +.
+    function paintChips() {
+      const list = layers();
+      const buttons = list.map((l, i) => {
+        const chip = el('button', { type: 'button', class: 'chip', 'aria-pressed': String(i === layer) }, String(i + 1));
+        chip.style.setProperty('--chip', Rc.layerAt(l, at(), move.easing).colour);
+        chip.title = `Layer ${i + 1}`;
+        chip.addEventListener('click', () => {
+          layer = i;
+          repaint();
+        });
+        return chip;
+      });
+      const add = el('button', { type: 'button', class: 'chip add', title: 'Add a layer, with its own pen' }, '+');
+      add.disabled = !list.length || list.length >= 8;
+      add.addEventListener('click', () => {
+        const { width, colour } = shownPen();
+        Rc.setField(move, field.key, [...list, Rc.newLayer({ width, colour })]);
+        layer = list.length;
+        changed();
+      });
+      chips.replaceChildren(...buttons, add);
+    }
+
+    function setNote() {
+      const l = current();
+      const keys = l ? l.keys : [];
+      const i = l ? Rc.keyIndex(l, at()) : -1;
+      const name = (layers().length > 1 ? `Layer ${layer + 1}, ` : '') + frameName(frame);
+      const Name = name[0].toUpperCase() + name.slice(1);
+      const animated = Rc.animated(move);
+      if (!animated) note.textContent = 'Draw one shape. Up is towards the rim.';
+      else if (!keys.length) note.textContent = `${Name}: nothing on this layer yet. Draw to make a key here.`;
+      else if (i < 0) note.textContent = `${Name}, generated. Draw to make it a key, or copy it here to add to.`;
+      else {
+        const before = keys.filter((k) => k.at < keys[i].at - 1e-3).pop();
+        const a = before ? before.strokes.length : 0;
+        const b = keys[i].strokes.length;
+        if (!before) note.textContent = keys.length > 1 ? `${Name}: its strokes pair, in order, with the next key’s.` : `${Name}.`;
+        else if (b < a) note.textContent = `${Name}: draw stroke ${b + 1} of ${a}, matching the highlighted one.`;
+        else if (b === a) note.textContent = `${Name} matches the key before. More strokes grow in.`;
+        else note.textContent = `${Name}: ${b - a} more stroke${b - a > 1 ? 's' : ''} than the key before, growing in.`;
+      }
+      const isKey = i >= 0;
+      copy.hidden = !animated || isKey || !keys.length;
+      clear.hidden = !l || (!isKey && (keys.length || layers().length < 2));
+      clear.textContent = l && !keys.length ? 'Remove layer' : animated ? 'Clear key' : 'Clear';
+      const { width, colour } = shownPen();
+      penRange.value = width;
+      penColour.value = colour;
+      penRange.disabled = penColour.disabled = !penFree(); // generated: blended
+      penCaption.textContent = !penFree() ? 'Pen (generated)' : animated ? `Pen, ${frameName(frame)}` : 'Pen';
+      penRange.title = `Pen width: ${Number(width).toFixed(3)}`;
+    }
+
+    function paint() {
+      setNote();
+      const size = Math.round(canvas.clientWidth * (window.devicePixelRatio || 1));
+      if (!size) return;
+      if (canvas.width !== size) canvas.width = canvas.height = size;
+      const c = canvas.getContext('2d');
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.fillStyle = '#fafaf5';
+      c.fillRect(0, 0, size, size);
+      // Guides: a centre cross, and an arrow pointing to the rim.
+      c.strokeStyle = 'rgba(0, 0, 0, 0.15)';
+      c.lineWidth = 1;
+      c.beginPath();
+      c.moveTo(size / 2, 0);
+      c.lineTo(size / 2, size);
+      c.moveTo(0, size / 2);
+      c.lineTo(size, size / 2);
+      c.stroke();
+      c.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      c.font = `${Math.round(size / 16)}px system-ui, sans-serif`;
+      c.textAlign = 'right';
+      c.fillText('↑ rim', size - 6, size / 12);
+      c.textAlign = 'left';
+      const animated = Rc.animated(move);
+      if (animated) c.fillText(frame === 0 ? 'A' : frame === animation().keyB ? 'B' : `${frame + 1}`, 6, size / 12);
+
+      const t = at();
+      // Behind: the other layers on this frame, faintly in their colours.
+      c.globalAlpha = 0.3;
+      layers().forEach((l, i) => {
+        if (i === layer) return;
+        const shown = Rc.layerAt(l, t, move.easing);
+        strokeOn(c, size, shown.strokes, shown.colour, padWidth(shown.width));
+      });
+      c.globalAlpha = 1;
+      const l = current();
+      const key = keyHere();
+      if (animated && l) {
+        // Onion skin: this layer's keys either side; the stroke of the one before to match next.
+        const pens = Rc.keyPens(l);
+        const before = l.keys.findLastIndex((k) => k.at < t - 1e-3);
+        const after = l.keys.findIndex((k) => k.at > t + 1e-3);
+        for (const i of [before, after]) {
+          if (i >= 0) strokeOn(c, size, l.keys[i].strokes, 'rgba(0, 0, 0, 0.12)', padWidth(pens[i].width));
+        }
+        const next = before >= 0 && l.keys[before].strokes[key ? key.strokes.length : 0];
+        if (next) strokeOn(c, size, [next], 'rgba(240, 160, 40, 0.55)', padWidth(pens[before].width));
+        if (!key) {
+          // A generated frame: what is there now, a little faded.
+          const shown = Rc.layerAt(l, t, move.easing);
+          c.globalAlpha = 0.5;
+          strokeOn(c, size, shown.strokes, shown.colour, padWidth(shown.width));
+          c.globalAlpha = 1;
+        }
+      }
+      const { width, colour } = shownPen();
+      strokeOn(c, size, [...(key ? key.strokes : []), ...(stroke ? [stroke] : [])], colour, padWidth(width));
+    }
+
+    // The frames as small buttons: keys (in any layer) marked, the one on the pad outlined.
+    function paintStrip() {
+      strip.hidden = !Rc.animated(move);
+      if (strip.hidden) return;
+      const anim = animation();
+      if (frames.children.length !== anim.frames) {
+        frames.replaceChildren();
+        for (let k = 0; k < anim.frames; k++) {
+          const button = el('button', { type: 'button', class: 'frame' });
+          button.append(el('canvas'), el('span'));
+          button.addEventListener('click', () => {
+            stopPlaying();
+            frame = k;
+            repaint();
+          });
+          frames.append(button);
+        }
+      }
+      [...frames.children].forEach((button, k) => {
+        const t = anim.at(k);
+        const isKey = layers().some((l) => Rc.keyIndex(l, t) >= 0);
+        const label = k === 0 ? 'A' : k === anim.keyB ? 'B' : isKey ? '•' : '';
+        button.classList.toggle('key', isKey);
+        button.querySelector('span').textContent = label;
+        button.title = `${frameName(k)[0].toUpperCase()}${frameName(k).slice(1)}${isKey ? ' (a key)' : ', generated'}: click to draw on it`;
+        button.setAttribute('aria-pressed', String(k === frame));
+        const thumb = button.querySelector('canvas');
+        const size = Math.round(24 * (window.devicePixelRatio || 1));
+        thumb.width = thumb.height = size;
+        const c = thumb.getContext('2d');
+        c.fillStyle = '#fafaf5';
+        c.fillRect(0, 0, size, size);
+        for (const l of anim.layers(k)) strokeOn(c, size, l.strokes, l.colour, Math.max(0.06, padWidth(l.width)));
+      });
+    }
+
+    function repaint() {
+      layer = Math.max(0, Math.min(layer, layers().length - 1));
+      if (!Rc.animated(move) || frame >= animation().frames) frame = 0;
+      if (!playing) padPlaces.set(move.id, { frame, layer });
+      paintChips();
+      paint();
+      paintStrip();
+    }
+    wrap.paint = repaint;
+
+    syncList.push(() => {
+      wrap.hidden = Rc.fieldInactive(recipe, move, field.key);
+      const animated = Rc.animated(move);
+      // Just set moving, with only key A drawn: draw key B next.
+      if (animated && !wasAnimated && layers().every((l) => l.keys.every((k) => k.at === 0))) frame = animation().keyB;
+      wasAnimated = animated;
+      requestAnimationFrame(repaint); // once shown, so it has a size
+    });
+    return wrap;
+  }
+
   // The controls for one field: a label, then a slider and number box kept in sync
   // (as in bindControl below), or a choice list. `onChange` runs after the field changes,
   // and a function that refreshes the controls from the move is added to `syncList`.
   function fieldControls(move, field, onChange, syncList) {
+    if (field.onPad) return []; // set on another field's pad (e.g. key B and its pen)
     const id = `move${move.id}-${field.key}`;
     const label = el('label', { for: id }, field.label);
 
@@ -165,13 +513,19 @@
       return [label, picker, code];
     }
 
+
+    if (field.layers) return [drawingPad(move, field, onChange, syncList)];
+
     if (field.cycle) {
-      const choices = field.options.map(([value, text, short]) => [value, short || text, text]);
+      // A choice, or a divisor of the count (e.g. repeats around the ring).
+      const choices = field.divisors
+        ? () => Rc.repeatChoices(move.count).map((d) => [d, d === 1 ? 'once' : `${d} times`, `${move.count / d} frames each time round`])
+        : field.options.map(([value, text, short]) => [value, short || text, text]);
       const cell = cycler(id, field.label, choices, (value) => {
         if (Rc.setField(move, field.key, value)) onChange();
       });
       syncList.push(() => {
-        cell.choose(move[field.key]);
+        cell.choose(field.divisors ? Rc.repeatsOf(move) : move[field.key]);
         markInactive(move, field, cell.caption, [cell.button]);
       });
       return [cell];
@@ -401,7 +755,8 @@
   // `pick(value)` runs with the next choice; a change event then bubbles up, so the card
   // records an undo step. Returns the cell, with `choose(value, guessed)` to show a value:
   // guessed shows the nearest choice dimmed, and a click then takes that choice first.
-  function cycler(id, caption, choices, pick) {
+  function cycler(id, caption, choicesNow, pick) {
+    let choices = typeof choicesNow === 'function' ? choicesNow() : choicesNow; // may change (e.g. with a count)
     const button = el('button', { id, type: 'button', class: 'cycle' });
     const cell = el('div', { class: 'cycle-cell' });
     cell.caption = el('label', { for: id, class: 'cycle-caption' }, caption);
@@ -414,6 +769,7 @@
       button.dispatchEvent(new Event('change', { bubbles: true }));
     });
     cell.choose = (value, guess = false) => {
+      if (typeof choicesNow === 'function') choices = choicesNow();
       index = Math.max(0, choices.findIndex(([v]) => String(v) === String(value)));
       guessed = guess;
       const [, text, title] = choices[index];
@@ -471,6 +827,16 @@
         continue;
       }
       const controls = fieldControls(move, field, onChange, syncList);
+      if (field.shown) {
+        // Fields that only mean something some of the time (e.g. easing, once animated).
+        syncList.push(() => {
+          for (const node of controls) node.hidden = !field.shown(move);
+        });
+      }
+      if (field.layers) {
+        // Keep the pad's pen width, length and colour up to date as their controls move.
+        for (const type of ['input', 'change']) fields.addEventListener(type, () => controls[0].paint());
+      }
       if (field.cycle) {
         // Neighbouring cycling choices share one line.
         let row = fields.lastElementChild;
